@@ -1,6 +1,7 @@
 #include "Mapping.hpp"
 #include "Config/config.h"
 #include "Config/debug.h"
+#include <iostream>
 
 /* Map each actor instance to each core. This mapping strategy requires bookkeeping of which actor is executed
  * on which core, e.g. by atomics. Hence, the flag actor sharing flag is set in the Mapping_Data.

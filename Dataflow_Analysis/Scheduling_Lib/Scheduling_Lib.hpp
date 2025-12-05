@@ -9,6 +9,8 @@
 
 namespace Scheduling {
 
+	/* NOTE: The scheduling lib is not considering Composit actors! */
+
 	/* Sort Actor Instances in actors accordingly to the network specified in dpn.
 	 * Function returns the result in sorted_actors parameter.
 	 */
@@ -16,6 +18,10 @@ namespace Scheduling {
 		std::set<std::string>& actors,
 		IR::Dataflow_Network* dpn,
 		std::vector<std::string>& sorted_actors);
+	void topology_sort_inst(
+		std::set<IR::Actor_Instance_Base*>& actors,
+		IR::Dataflow_Network* dpn,
+		std::vector<IR::Actor_Instance_Base*>& sorted_actors);
 
 	/* Find all actor instances that are assigned to a specific core. 
 	 * The function returns the result in list.

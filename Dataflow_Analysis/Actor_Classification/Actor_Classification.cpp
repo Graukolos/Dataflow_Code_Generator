@@ -6,6 +6,7 @@
 #include "Actor_Classification.hpp"
 #include "Config/debug.h"
 #include "Config/config.h"
+#include <iostream>
 
 // return true if the merge was without conflicts, false it there was a conflict while merging
 static bool merge_maps(

@@ -1,0 +1,2 @@
+target_sources(Dataflow_Code_Generator PRIVATE
+	Semantic_Analysis.cpp)

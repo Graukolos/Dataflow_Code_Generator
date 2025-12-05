@@ -1,6 +1,9 @@
 #include "Mapping_Lib.hpp"
 #include "rapidxml-1.13/rapidxml.hpp"
 #include <string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 using namespace rapidxml;
 
 static unsigned weight_for_instance(
@@ -60,7 +63,7 @@ static void find_predecessors(
 	for (auto it = inst->get_in_edges().begin();
 		it != inst->get_in_edges().end(); ++it)
 	{
-		predecessors.insert((*it)->get_source());
+		predecessors.insert(dynamic_cast<IR::Actor_Instance*>((*it)->get_source()));
 	}
 }
 
@@ -72,7 +75,7 @@ static void find_sucessors(
 	for (auto it = inst->get_out_edges().begin();
 		it != inst->get_out_edges().end(); ++it)
 	{
-		sucessors.insert((*it)->get_sink());
+		sucessors.insert(dynamic_cast<IR::Actor_Instance*>((*it)->get_sink()));
 	}
 }
 
@@ -354,7 +357,7 @@ unsigned Mapping::compute_critical_path(
 			for (auto next = (*it)->get_in_edges().begin();
 				next != (*it)->get_in_edges().end(); ++next)
 			{
-				n->next.insert((*next)->get_source());
+				n->next.insert(dynamic_cast<IR::Actor_Instance*>((*next)->get_source()));
 			}
 		}
 		free(p);

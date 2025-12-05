@@ -6,6 +6,8 @@
 #include <tuple>
 #include "String_Helper.h"
 #include "ABI/abi.hpp"
+#include "Converter_RVC_Cpp.hpp"
+#include <iostream>
 
 static std::string default_local(
 	std::map<std::string, std::vector<Scheduling::Channel_Schedule_Data> >& actions,
@@ -23,7 +25,8 @@ static std::string default_local(
 	std::string loop_exp,
 	bool round_robin,
 	std::string schedule_function_name,
-	std::string schedule_function_parameter)
+	std::string schedule_function_parameter,
+	bool no_else)
 {
 	Config* c = c->getInstance();
 	std::string output{ };
@@ -51,7 +54,7 @@ static std::string default_local(
 		}
 		std::set<std::string> states = Scheduling::get_all_states(fsm);
 		for (auto it = states.begin(); it != states.end(); ++it) {
-			if (it == states.begin()) {
+			if ((it == states.begin()) || no_else) {
 				output.append(prefix + "\tif (" + state_enum_compare + *it + ") {\n");
 			}
 			else {
@@ -93,7 +96,7 @@ static std::string default_local(
 						action_condition = tmp;
 					}
 				}
-				if (action_it == schedulable_actions.begin()) {
+				if ((action_it == schedulable_actions.begin()) || no_else) {
 					output.append(local_prefix + "if (" + action_condition + ") {\n");
 				}
 				else {
@@ -137,15 +140,16 @@ static std::string default_local(
 				}
 				output.append(local_prefix + "}\n");
 			}
-			output.append(local_prefix + "else {\n");
-			if (round_robin) {
-				output.append(local_prefix + "\treturn;\n");
+			if (!no_else) {
+				output.append(local_prefix + "else {\n");
+				if (round_robin) {
+					output.append(local_prefix + "\treturn;\n");
+				}
+				else {
+					output.append(local_prefix + "\tbreak;\n");
+				}
+				output.append(local_prefix + "}\n");
 			}
-			else {
-				output.append(local_prefix + "\tbreak;\n");
-			}
-			output.append(local_prefix + "}\n");
-
 			if (static_rate) {
 				output.append(prefix + "\t\t}\n");
 				output.append(prefix + "\t\telse {\n");
@@ -194,7 +198,7 @@ static std::string default_local(
 					action_condition = tmp;
 				}
 			}
-			if (it == schedulable_actions.begin()) {
+			if ((it == schedulable_actions.begin()) || no_else) {
 				output.append(local_prefix + "if (" + action_condition + ") {\n");
 			}
 			else {
@@ -234,14 +238,16 @@ static std::string default_local(
 			}
 			output.append(local_prefix + "}\n");
 		}
-		output.append(local_prefix + "else {\n");
-		if (round_robin) {
-			output.append(local_prefix + "\treturn;\n");
+		if (!no_else) {
+			output.append(local_prefix + "else {\n");
+			if (round_robin) {
+				output.append(local_prefix + "\treturn;\n");
+			}
+			else {
+				output.append(local_prefix + "\tbreak;\n");
+			}
+			output.append(local_prefix + "}\n");
 		}
-		else {
-			output.append(local_prefix + "\tbreak;\n");
-		}
-		output.append(local_prefix + "}\n");
 		if (static_rate) {
 			output.append(prefix + "\t}\n");
 			output.append(prefix + "\telse {\n");
@@ -277,19 +283,23 @@ static std::string default_local(
 	return output;
 }
 
+
 /* Replace channel variables used in the guards by either fetched local variables
  * or prefetch function calls.
  */
 static std::string guard_var_replacement(
-	std::string guard,
+	AST::Action *action,
 	std::map<std::string, std::string>& replacement_map)
 {
-	remove_whitespaces(guard);
-
-	for (auto it = replacement_map.begin(); it != replacement_map.end(); ++it) {
-		replace_variables(guard, it->first, it->second);
+	std::string guard;
+	bool first = true;
+	for (auto e : action->guards) {
+		if (!first) {
+			guard.append(" && ");
+		}
+		first = false;
+		guard.append("(" + Converter_RVC_Cpp::convert_expression(e, replacement_map) + ")");
 	}
-
 	return guard;
 }
 
@@ -303,10 +313,11 @@ static std::string guard_var_replacement(
  */
 static std::map<std::string, std::string> get_scheduler_channel_access(
 	std::map<std::string, std::vector< Scheduling::Channel_Schedule_Data> >& actions,
-	std::map<std::string, std::string>& action_guard,
+	std::map<std::string, AST::Action*>& action_guard,
 	Actor_Classification input_classification,
 	std::map<std::string, std::vector<std::string>>& actions_per_state,
-	Actor_Conversion_Data& conversion_data)
+	std::map<std::string, std::string> replacements,
+	std::map<std::string, std::string>& converted_guards)
 {
 	// Map the channel read to local variable for each state if required (not in the dynamic case)
 	std::map<std::string, std::string> output;
@@ -324,7 +335,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 		{
 			std::map<std::string, std::string> replacement_map;
 			if (c->get_target_language() == Target_Language::c) {
-				replacement_map = conversion_data.get_replacement_map();
+				replacement_map = replacements;
 			}
 
 			for (auto sched_data_it = action_it->second.begin();
@@ -332,7 +343,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 			{
 				// One scheduling data entry per accessed channel
 				unsigned index = 0;
-				if (action_guard.contains(action_it->first) && (action_guard[action_it->first] != "")) {
+				if (action_guard.contains(action_it->first) && !(action_guard[action_it->first]->guards.empty())) {
 					for (auto var_it = sched_data_it->var_names.begin();
 						var_it != sched_data_it->var_names.end(); ++var_it)
 					{
@@ -374,12 +385,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 			}
 
 			std::string replaced_guard = guard_var_replacement(action_guard[action_it->first], replacement_map);
-#ifdef DEBUG_SCHEDULER_GENERATION
-			if ((replaced_guard != action_guard[action_it->first]) && !replaced_guard.empty()) {
-				std::cout << "Action: " << action_it->first << " Replace guard " << action_guard[action_it->first] << " by " << replaced_guard << std::endl;
-			}
-#endif
-			action_guard[action_it->first] = replaced_guard;
+			converted_guards[action_it->first] = replaced_guard;
 		}
 	}
 	else {
@@ -391,7 +397,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 				for (auto action_it = state_it->second.begin(); action_it != state_it->second.end(); ++action_it) {
 					std::map<std::string, std::string> replacement_map;
 					if (c->get_target_language() == Target_Language::c) {
-						replacement_map = conversion_data.get_replacement_map();
+						replacement_map = replacements;
 					}
 
 					for (auto sched_data_it = actions[*action_it].begin();
@@ -399,7 +405,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 					{
 						// One scheduling data entry per accessed channel
 						unsigned index = 0;
-						if (action_guard.contains(*action_it) && (action_guard[*action_it] != "")) {
+						if (action_guard.contains(*action_it) && !(action_guard[*action_it]->guards.empty())) {
 							for (auto var_it = sched_data_it->var_names.begin();
 								var_it != sched_data_it->var_names.end(); ++var_it)
 							{
@@ -441,12 +447,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 						}
 					}
 					std::string replaced_guard = guard_var_replacement(action_guard[*action_it], replacement_map);
-#ifdef DEBUG_SCHEDULER_GENERATION
-					if ((replaced_guard != action_guard[*action_it]) && !replaced_guard.empty()) {
-						std::cout << "Action: " << *action_it << " Replace guard " << action_guard[*action_it] << " by " << replaced_guard << std::endl;
-					}
-#endif
-					action_guard[*action_it] = replaced_guard;
+					converted_guards[*action_it] = replaced_guard;
 				}
 
 				std::string local_def;
@@ -477,7 +478,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 			{
 				std::map<std::string, std::string> replacement_map;
 				if (c->get_target_language() == Target_Language::c) {
-					replacement_map = conversion_data.get_replacement_map();
+					replacement_map = replacements;
 				}
 
 				for (auto sched_data_it = action_it->second.begin();
@@ -485,7 +486,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 				{
 					// One scheduling data entry per accessed channel
 					unsigned index = 0;
-					if (action_guard.contains(action_it->first) && (action_guard[action_it->first] != "")) {
+					if (action_guard.contains(action_it->first) && !(action_guard[action_it->first]->guards.empty())) {
 						for (auto var_it = sched_data_it->var_names.begin();
 							var_it != sched_data_it->var_names.end(); ++var_it)
 						{
@@ -527,12 +528,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 					}
 				}
 				std::string replaced_guard = guard_var_replacement(action_guard[action_it->first], replacement_map);
-#ifdef DEBUG_SCHEDULER_GENERATION
-				if (!replaced_guard.empty() && (action_guard[action_it->first] != replaced_guard)) {
-					std::cout << "Action: " << action_it->first << " Replace guard " << action_guard[action_it->first] << " by " << replaced_guard << std::endl;
-				}
-#endif
-				action_guard[action_it->first] = replaced_guard;
+				converted_guards[action_it->first] = replaced_guard;
 			}
 			std::string local_def;
 			for (auto it = actions.begin()->second.begin(); it != actions.begin()->second.end(); ++it) {
@@ -563,8 +559,7 @@ static std::map<std::string, std::string> get_scheduler_channel_access(
 
 
 std::string Scheduling::generate_local_scheduler(
-	Actor_Conversion_Data& conversion_data,
-	std::map<std::string, std::string>& action_guard,
+	std::map<std::string, AST::Action*>& action_guard,
 	std::vector<IR::FSM_Entry>& fsm,
 	std::vector<IR::Priority_Entry>& priorities,
 	Actor_Classification input_classification,
@@ -572,10 +567,12 @@ std::string Scheduling::generate_local_scheduler(
 	std::string prefix,
 	std::string schedule_function_name,
 	std::string schedule_function_parameter,
-	unsigned scheduling_loop_bound)
+	std::map<std::string, std::vector< Channel_Schedule_Data>>& actions,
+	std::map<std::string, std::string> replacements,
+	unsigned scheduling_loop_bound,
+	bool no_else)
 {
 	Config* c = c->getInstance();
-	std::map<std::string, std::vector< Channel_Schedule_Data > > actions = conversion_data.get_scheduling_data();
 
 #ifdef DEBUG_SCHEDULER_GENERATION
 	for (auto it = actions.begin(); it != actions.end(); ++it) {
@@ -609,12 +606,21 @@ std::string Scheduling::generate_local_scheduler(
 		actions_per_state[it] = sched_actions;
 	}
 
+	for (auto s : actions_per_state) {
+		std::cout << "Actions for state: " << s.first << ": ";
+		for (auto a : s.second) {
+			std::cout << a << " ";
+		}
+		std::cout << std::endl;
+	}
+
+	std::map<std::string, std::string> converted_guard_conditions;
 	std::map<std::string, std::string> state_channel_access = 
-		get_scheduler_channel_access(actions, action_guard, input_classification, actions_per_state, conversion_data);
+		get_scheduler_channel_access(actions, action_guard, input_classification, actions_per_state, replacements, converted_guard_conditions);
 
 	// Set guard to (true) if no guard is specified as this avoids checking during code generation
 	// whether a guard is used or not. The C-Compiler can optimize this.
-	for (auto it = action_guard.begin(); it != action_guard.end(); ++it) {
+	for (auto it = converted_guard_conditions.begin(); it != converted_guard_conditions.end(); ++it) {
 		if (it->second.empty()) {
 			it->second = "(true)";
 		}
@@ -731,7 +737,7 @@ std::string Scheduling::generate_local_scheduler(
 	if (c->get_sched_non_preemptive() || c->get_sched_rr()) {
 		return default_local(actions, fsm, priorities,
 			input_classification, output_classification, prefix,
-			action_guard,
+			converted_guard_conditions,
 			action_schedulingCondition_map,
 			action_freeSpaceCondition_map,
 			state_channel_access,
@@ -739,7 +745,8 @@ std::string Scheduling::generate_local_scheduler(
 			sched_loop,
 			c->get_sched_rr(),
 			schedule_function_name,
-			schedule_function_parameter
+			schedule_function_parameter,
+			no_else
 			);
 	}
 	else {

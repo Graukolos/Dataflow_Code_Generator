@@ -1,25 +1,15 @@
 # Changelog
 
-## 1.4
+## 2.0
 
 ### Added
- * Replaced actor classification by a more general dataflow analysis phase including more analysis than only actor classification
- 
-### Changed
- * Improved architecture: Previous stages don't have dependency to code generation anymore.
- * Minor bug fixes
+ * Lexer, Parser and AST generation
+ * Code generation now based on new ASTs for actors
+ * Model optimization through actor fusion
 
-## 1.3.1
-
-### Added
- * No additions, only minor version for bug fixes
- 
 ### Changed
- * Properly check if file open operation failed, and stop operation in this case without reading from a file that wasn't opened properly
- * Check for multi-reader/writer ports/channels and stop operation if present
- * Don't generate FSM enum declaration if no FSM is present
- * Also consider actor instances without connections during internal network respresentation initialization
- * Guard conditions concatenated with comma are now evaluated properly and correct code is generated
+ * Runtime of code generation and optimization is printed to the console
+ * Fixed bugs in topology sort that lead to an infinite loop or wrong sorting
 
 ## 1.3
 

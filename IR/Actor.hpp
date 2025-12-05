@@ -2,18 +2,12 @@
 
 #include <string>
 #include "Action.hpp"
-#include "Unit.hpp"
 #include <vector>
 #include <set>
-#include "Tokenizer/Action_Buffer.hpp"
-#include "Tokenizer/Import_Buffer.hpp"
-#include "Tokenizer/Method_Buffer.hpp"
-#include "Tokenizer/Parameter_Buffer.hpp"
-#include "Tokenizer/Tokenizer.hpp"
-#include "Tokenizer/Var_Buffer.hpp"
-#include "Tokenizer/Native_Buffer.hpp"
-#include "Conversion/Actor_Conversion_Data.hpp"
 #include "Dataflow_Analysis/Actor_Classification/Actor_Classification.hpp"
+#include "AST/AST.hpp"
+#include "Unit.hpp"
+#include <map>
 
 namespace IR {
 
@@ -53,43 +47,36 @@ namespace IR {
 		std::vector< Buffer_Access > in_buffers;
 		std::vector< Buffer_Access > out_buffers;
 
-		std::vector<Action_Buffer> buffered_actions{};
-		std::vector<Import_Buffer> import_buffers{};
-		std::vector<Var_Buffer> var_buffers{};
-		std::vector<Parameter_Buffer> param_buffers{};
-		std::vector<Method_Buffer> method_buffers{};
-		std::vector<Native_Buffer> native_buffers{};
+		AST::AST_Root* ast;
 
-		std::vector<std::pair<std::string, Unit*>> imported_symbols;
-
-		/* uses native code */
-		bool use_native{ false };
+		std::vector<Unit*> imported_symbols;
 
 		/* Translate the buffer access definitions of this actor into objects stored here as
 		 * in_buffers and out_buffers.
 		 */
-		void parse_buffer_access(Token& t, Tokenizer& token_producer);
+		void parse_buffer_access(void);
 		/* Convert the FSM definition into a FSM_Entry objects stored in this object. */
-		void parse_schedule_fsm(Token& t, Tokenizer& token_producer);
+		void parse_schedule_fsm(void);
 		/* Convert the Priority definitions into Priority_Entry objects stored in this object. */
-		void parse_priorities(Token& t, Tokenizer& token_producer);
+		void parse_priorities(void);
 		/* Parse the actions for their token rates and guards. */
-		void parse_action(Action_Buffer& token_producer);
+		void parse_action(AST::Action *action, std::map<std::string, std::string>& symbol_map);
 		/* Convert the imports as there might be consts defined that are used for the token rates. */
-		void convert_import(Import_Buffer& token_producer, Dataflow_Network* dpn);
-
-		/* The data that is used during and for conversion that is not relevant for the IR. */
-		Actor_Conversion_Data conversion_data;
+		void convert_import(AST::Import* import, Dataflow_Network* dpn);
 
 		/* Classification of the input channel tokenrates. Might differ from the output classification! */
 		Actor_Classification input_classification{ Actor_Classification::dynamic_rate };
 		/* Classification of the output channel tokenrates, might differ from the input classification! */
 		Actor_Classification output_classification{ Actor_Classification::dynamic_rate };
 
+		std::string identifier;
+
+		std::map<std::string, std::string> const_map;
+
 	public:
 
 		Actor(std::string name, std::string path) : class_name(name), path(path) {
-
+			ast = nullptr;
 		}
 
 		std::string get_class_name(void) {
@@ -156,34 +143,6 @@ namespace IR {
 			return "";
 		}
 
-		Actor_Conversion_Data& get_conversion_data(void) {
-			return conversion_data;
-		}
-
-		Actor_Conversion_Data* get_conversion_data_ptr(void) {
-			return &conversion_data;
-		}
-
-		std::vector<Action_Buffer>& get_buffered_actions(void) {
-			return buffered_actions;
-		}
-
-		std::vector<Var_Buffer>& get_var_buffers(void) {
-			return var_buffers;
-		}
-
-		std::vector<Parameter_Buffer>& get_param_buffers(void) {
-			return param_buffers;
-		}
-			
-		std::vector<Method_Buffer>& get_method_buffers(void) {
-			return method_buffers;
-		}
-			
-		std::vector<Native_Buffer>& get_native_buffers(void) {
-			return native_buffers;
-		}
-
 		std::vector<FSM_Entry>& get_fsm(void) {
 			return fsm;
 		}
@@ -196,11 +155,11 @@ namespace IR {
 			return priorities;
 		}
 
-		Actor_Classification get_input_classification(void) {
+		Actor_Classification get_input_classification(void) const {
 			return input_classification;
 		}
 
-		Actor_Classification get_output_classification(void) {
+		Actor_Classification get_output_classification(void) const {
 			return output_classification;
 		}
 
@@ -275,11 +234,11 @@ namespace IR {
 
 		// returns either a pointer of higher priority action or nullptr if there is not priority between them defined
 		IR::Action* get_higher_priority(IR::Action *action1, IR::Action *action2) {
-			for (auto p : priorities) {//FIXME: This is not complete! Use comparison_object from scheduling lib!
-				if ((p.action_high == action1->get_name()) && (p.action_low == action2->get_name())) {
+			for (auto p = priorities.begin(); p != priorities.end(); ++p) {
+				if ((p->action_high == action1->get_name()) && (p->action_low == action2->get_name())) {
 					return action1;
 				}
-				else if ((p.action_high == action2->get_name()) && (p.action_low == action1->get_name())) {
+				else if ((p->action_high == action2->get_name()) && (p->action_low == action1->get_name())) {
 					return action2;
 				}
 			}
@@ -287,7 +246,7 @@ namespace IR {
 			return nullptr;
 		}
 
-		bool is_static(void) {
+		bool is_static(void) const {
 			if ((input_classification == Actor_Classification::static_rate) &&
 				(output_classification == Actor_Classification::static_rate))
 			{
@@ -296,16 +255,23 @@ namespace IR {
 			return false;
 		}
 
-		std::vector<Import_Buffer>& get_import_buffers(void) {
-			return import_buffers;
-		}
-
-		bool uses_native(void) {
-			return use_native;
-		}
-
-		std::vector<std::pair<std::string, Unit*>>& get_imported_symbols(void) {
+		std::vector<Unit*>& get_imported_symbols(void) {
 			return imported_symbols;
+		}
+
+		void set_identifier(std::string i) {
+			identifier = i;
+		}
+		std::string get_identifier(void) {
+			return identifier;
+		}
+
+		AST::AST_Root* get_ast(void) {
+			return ast;
+		}
+
+		std::map<std::string, std::string>& get_const_map(void) {
+			return const_map;
 		}
 	};
 }

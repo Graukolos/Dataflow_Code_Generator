@@ -1,0 +1,411 @@
+Operator Precedence:
+
+Level        Operator             Description                                  Associativity                                     
+2            a++ a--              Suffix/postfix increment and decrement       Left-to-right
+             a()                  Functional call
+             a[]                  Subscript
+3            ++a --a              Prefix increment and decrement               Right-to-left
+             +a -a                Unary plus and minus
+             !a ~a                Logical NOT and bitwise NOT
+4            a * b a / b a % b    Multiplication, division, and remainder      Left-to-right
+5            a + b a - b          Addition and subtraction                     "
+6            a << b a >> b        Bitwise left shift and right shift           "
+7            a < b a > b          For relational operators < and <=            "
+             a <= b < >= b        and > and >= respectively
+8            a = b a != b         Equality operators                           "
+9            a & b                Bitwise AND                                  "
+10           a ^ b                Bitwise XOR                                  "
+11           a | b                Bitwise OR                                   "
+12           a && b               Logical AND                                  "
+13           a || b               Logical OR                                   "
+14           if ... end           Ternary                                      Right-to-left
+             a = b                Const Assignment
+             a := b               Assignment
+15           a..b                 Range	                                       Left-to-right
+16           a, b                 Comma                                        Left-to-right
+
+Lexer:
+Delimiter := ’(’ | ’)’ | ’{’ | ’}’ | ’[’ | ’]’ | ’;’ | ’,’
+Operator :=  ’!’ | ’@’ | ’#’ | ’$’ | ’%’ | ’^’ | ’&’ | ’*’ | ’/’ | ’+’ | ’-’ | ’=’ | ’<’ | ’>’ | ’?’ | ’~’ | ’|’ | ’.’
+Number -> Integer | Real
+Integer -> DecimalLiteral | HexadecimalLiteral
+Real -> DecimalDigit { DecimalDigit } ’.’ DecimalDigit { DecimalDigit } [Exponent]
+	| DecimalDigit { DecimalDigit } Exponent
+DecimalLiteral -> DecimalDigit { DecimalDigit }
+HexadecimalLiteral -> ’0’ (’x’|’X’) HexadecimalDigit { HexadecimalDigit }
+OctalLiteral -> ’0’ { OctalDigit }
+Exponent -> (’e’|’E’) [’+’|’-’] DecimalDigit { DecimalDigit }
+DecimalDigit -> ’0’|’1’|’2’|’3’|’4’|’5’|’6’|’7’|’8’|’9’
+HexadecimalDigit -> DecimalDigit
+	| ’a’|’b’|’c’|’d’|’e’|’f’
+	| ’A’|’B’|’C’|’D’|’E’|’F’
+ID -> Sequence of alphabetic characters of either case, digits, the underscore character and the dollar sign that is not a keyword, cannot start with a digit
+String -> ’"’ { Character } ’"’
+
+Parser (EBNF):
+
+CALFile -> [package QualID ’;’] [Imports] (Unit | Actor)
+
+Unit -> unit ID ’:’
+	{(VarDecl ’;’)| FuncDecl | ProcDecl | NativeFuncDecl | NativeProcedureDecl }
+	(end|endunit)
+
+Actor -> actor ID
+	’(’ [ActorPars] ’)’ IOSig ’:’
+	{ (VarDecl ’;’) | Action | FuncDecl | ProcDecl | NativeFuncDecl | NativeProcedureDecl }
+	[InitializationAction]
+	[ActionSchedule]
+	(end|endactor)
+ActorPar -> Type ID [’=’ Expression]
+IOSig -> [PortDecls] ’==>’ [PortDecls]
+PortDecl -> Type ID
+
+Imports -> { Import }
+ActorPars -> ActorPar { ’,’ ActorPar }
+PortDecls -> PortDecl { ’,’ PortDecl }
+
+Import -> import QualID [’.’’*’] ’;’
+QualID -> ID { . ID }
+
+Type -> IntegerType | String | ListType | FloatType
+
+IntegerType -> (’uint’ | ’int’) [’(’ ’size’ ’=’ ConstCalc’)’]
+
+FloatType -> (’float’ | ’half’) [’(’ ’size’ ’=’ ConstCalc’)’]
+
+ListType -> List ’(’ ’type’ ’:’ IntegerType ’,’ ’size’ ’=’ ConstCalc ’)’
+
+VarDecl -> Type ID {’[’ ConstCalc’]’} [(’=’ | ’:=’) (Expression | ListComprehension)]
+
+(Precedence not covered here!)
+BooleanOperator ->  ’||’ | ’&&’
+ArithOperator -> ’+’ | ’-’ | ’/’ | ’*’ | ’%’
+BitOperator -> ’|’ | ’&’ | ’<<’ | ’>>’ | ’^’
+relOperator ->  ’<’ | ’>’ | ’<=’ | ’>=’ | ’=’ | ’!=’
+
+unaryBooleanOperator -> ’!’ 
+unaryBitOperator -> ’~’
+unaryArithOperator -> ’+’’+’ | ’-’’-’  
+
+Op -> BooleanOperator | ArithOperator | BitOperator | relOperator
+unaryOp -> unaryBooleanOperator | unaryBitOperator | unaryArithOperator
+
+Expression -> SingleExpression { Op SingleExpression }
+SingleExpression -> [unaryOp] ID [{Index} | Call] [unaryOp]
+	| ExpressionLiteral
+	| ’(’ Expression ’)’
+	| IfExpression
+
+Expressions -> Expression {’,’ Expression }
+
+CallExpr -> ’(’ [Expressions] ’)’
+
+ExpressionLiteral -> ([’-’] Number)
+	| String
+	| true | false | null
+
+IfExpression -> if Expression then Expression else Expression (end|endif)
+
+ConstCalc -> SingleConstCalc { ArithOperator SingleConstCalc }
+SingleConstCalc -> Integer | ID | ’(’ ConstCalc ’)’
+
+FuncDecl -> function ID ’(’ [FormalPars] ’)’ ’-->’ Type ’:’ 
+	Expression (end|endfunction)
+ProcDecl -> procedure ID ’(’ [FormalPars] ’)’ [var VarDecls]
+	begin Statements (end|endprocedure)
+
+NativeFuncDecl -> ’@’ native function ID ’(’ [FormalPars] ’)’ ’-->’ Type (end|endfunction)
+NativeProcedureDecl -> ’@’ native procedure ID ’(’ [FormalPars] ’)’ (end|endprocedure)
+
+FormalPar -> Type ID
+
+VarDecls -> VarDecl {’,’ VarDecl }
+FormalPars -> FormalPar {’,’ FormalPar }
+
+ListComprehensionExprs -> (Expression | ListComprehension) {’,’ (Expression | ListComprehension)}
+ListComprehension -> ’[’ [ListComprehensionExprs [’:’ Generators]] ’]’
+
+Generator -> for [Type] ID in Expression ’.’’.’ Expression 
+
+Generators -> Generator {’,’ Generator } 
+
+Statement -> IDStmt
+	| BlockStmt
+	| IfStmt
+	| WhileStmt
+	| ForeachStmt
+
+IDStmt -> ID (AssignmentStmt | CallStmt)
+
+AssignmentStmt -> {Index} ’:=’ ( Expression | ListComprehension ) ’;’
+Index -> ’[’ Expression ’]’
+
+CallStmt -> ’(’ [Expressions] ’)’;’
+
+BlockStmt -> begin [var VarDecls do] Statements end
+
+IfStmt -> if Expression then Statements [else Statements] (end|endif)
+
+WhileStmt -> while Expression [var VarDecls] do [Statements] (end|endwhile)
+
+ForeachStmt -> ForeachGenerator { ’,’ ForeachGenerator }
+	[var VarDecls] do Statements (end|endforeach)
+ForeachGenerator -> foreach [Type] ID in Expression ’.’’.’ Expression
+
+Statements -> { Statement }
+
+Action -> [ActionTag ’:’] action ActionHead [do Statements] (end|endaction)
+ActionTag -> ID { ’.’ ID }
+ActionHead -> [InputPatterns] ’==>’ [OutputExpressions]
+	[guard Expressions ] [var VarDecls ]
+InputPattern -> ID ’:’ ’[’ IDs ’]’ [RepeatClause]
+OutputExpressions -> (Expression | ListComprehension) {’,’ (Expression | ListComprehension)}
+OutputExpression -> ID ’:’ ’[’ {Expression} ’]’ [RepeatClause]
+RepeatClause -> repeat ConstCalc
+IDs -> ID {’,’ ID}
+
+InputPatterns -> InputPattern {’,’ InputPattern } 
+OutputExpressions -> OutputExpression {’,’ OutputExpression }
+
+InitializationAction ->
+	initialize InitializerHead [do Statements] (end|endinitialize)
+InitializerHead -> ’==>’ OutputExpressions
+	[guard Expressions ] [var VarDecls ]
+
+ActionSchedule -> [ScheduleFSM] [PriorityOrder]
+
+ScheduleFSM -> schedule fsm ID ’:’
+	{ StateTransition ’;’ }
+	(end|endschedule)
+StateTransition -> ID ’(’ ActionTags ’)’ ’-->’ ID
+
+ActionTags -> ActionTag {’,’ ActionTag }
+
+PriorityOrder -> priority { PriorityInequality ’;’ } end
+PriorityInequality -> ActionTag ’>’ ActionTag { ’>’ ActionTag }
+
+
+
+Not Supported Features of CAL:
+Lexical tokens: OctalDigit => DecimalLiteral is simplified to {DecimalDigit} not need to start with a number != 0
+TimeClause
+Import is simplified to "import QualID", not distinction in SingleImport and GroupImport
+Type Restriction
+mutable Variables
+let Blocks or LetExpression
+lambdas or LambdaExpression
+old
+TypeAssertionExpr
+SetComprehension and MapComprehension
+FieldSelectorExpr and FieldRef
+ProcExpression
+ChooseStmt
+FieldAssignmentStmt
+delay in ActionHead and InitializerHead
+ChannelSelector in InputPattern and OutputPattern
+Multiports
+ScheduleRegExp in Action Schedules
+
+Parser (Context-free grammar):
+
+CALFile -> Package Imports CALFileContent
+Package -> "package" QualID ";" | ""
+CALFileContent -> Unit | Actor
+
+Unit -> "unit" "ID" ":"
+	UnitBody
+	UnitEnd
+UnitBody -> VarDecl ";" UnitBody | FuncDecl UnitBody | ProcDecl UnitBody | NativeDecl UnitBody | ""
+UnitEnd -> "end" | "endunit"
+
+Actor -> "actor" "ID"
+	"(" ActorPars ")" IOSig ":"
+	ActorBody
+	InitializationAction
+	ActionSchedule
+	ActorEnd
+ActorEnd -> "end" | "endactor"
+ActorPar -> Type "ID" ConstAsgn
+ConstAsgn -> "=" Expression | ""
+Asgn -> ":=" AssignmentExpr | "=" AssignmentExpr | ""
+IOSig -> PortDecls "==>" PortDecls
+PortDecl -> Type "ID"
+
+ActorBody -> VarDecl ";" ActorBody | Action ActorBody | FuncDecl ActorBody | ProcDecl ActorBody | NativeDecl ActorBody | ""
+
+Imports -> Import Imports | ""
+ActorPars -> ActorPar ActorParsList | ""
+ActorParsList -> "," ActorPar ActorParsList | ""
+PortDecls -> PortDecl PortDeclList | ""
+PortDeclList -> "," PortDecl PortDeclList | ""
+
+Import -> "import" QualID ";"
+QualID -> "ID" QualIDList
+QualIDList -> "." QualIDListElement | ""
+QualIDListElement -> "ID" QualIDList | "*"
+
+Type -> IntegerType | "String" | ListType | FloatType
+
+IntegerType -> IntegerTypes Size
+IntegerTypes -> "uint" | "int"
+Size -> "(" "size" "=" ConstCalc ")" | ""
+
+ListType -> "List" "(" "type" ":" IntegerType "," "size" "=" ConstCalc ")"
+
+FloatType -> FloatTypes Size
+FloatTypes -> "float" | "half"
+
+VarDecl -> Type "ID" ArrayDef Asgn
+ArrayDef -> "[" ConstCalc "] ArrayDef | ""
+
+(Precedence not covered here!)
+BooleanOperator ->  "||" | "&&"
+ArithOperator -> "+" | "-" | "/" | "*" | "%"
+BitOperator -> "|" | "&" | "<<" | ">>" | "^"
+relOperator ->  "<" | ">" | "<=" | ">=" | "=" | "!="
+
+unaryBooleanOperator -> "!" 
+unaryBitOperator -> "~"
+unaryArithOperator -> "++" | "--"  
+
+Op -> BooleanOperator | ArithOperator | BitOperator | relOperator
+unaryOp -> unaryBooleanOperator | unaryBitOperator | unaryArithOperator | ""
+
+Expression -> SingleExpression SingleExpressionList
+SingleExpressionList -> Op SingleExpression SingleExpressionList | ""
+SingleExpression -> unaryOp ID SingleExpressionAdd unaryOp
+	| ExpressionLiteral
+	| "(" Expression ")"
+	| IfExpression
+
+SingleExpressionAdd -> Index | CallExpr | ""
+
+Expressions -> Expression ExpressionList
+ExpressionList -> "," Expression ExpressionList | ""
+
+CallParameters -> Expressions | ""
+
+CallExpr -> "(" CallParameters ")"
+
+Negation -> "-" | ""
+
+ExpressionLiteral -> Negation "Number"
+	| "String"
+	| "true" | "false" | "null"
+
+IfExpression -> "if" Expression "then" Expression "else" Expression IfEnd
+IfEnd -> "end" | "endif"
+
+ConstCalc -> SingleConstCalc SingleConstCalcList
+SingleConstCalc -> "Integer" | "(" ConstCalc ")" | ID
+SingleConstCalcList -> ArithOperator SingleConstCalc SingleConstCalcList | ""
+
+FuncDecl -> "function" "ID" "(" FormalPars ")" "-->" Type ":"
+	Expression FuncDeclEnd
+FuncDeclEnd -> "end" | "endfunction"
+ProcDecl -> "procedure" "ID" "(" FormalPars ")" VarBlock
+	"begin" Statements ProcDeclEnd
+ProcDeclEnd -> "end" | "endprocedure"
+
+NativeDecl -> "@" "native" NativeDeclDes
+NativeDeclDes -> NativeFuncDecl | NativeProcedureDecl
+NativeFuncDecl ->  "function" "ID" "(" FormalPars ")" "-->" Type FuncDeclEnd
+NativeProcedureDecl -> "procedure" "ID" "(" FormalPars ")" ProcDeclEnd
+
+FormalPar -> Type "ID"
+
+VarDecls -> VarDecl VarDeclList
+VarDeclList -> "," VarDecl VarDeclList | ""
+FormalPars -> FormalPar FormalParsList | ""
+FormalParsList -> "," FormalPar FormalParsList | ""
+
+ListComprehension -> "[" ListComprehensionContent  "]"
+
+ListComprehensionExprsList -> "," ListComprehensionExprs | ""
+ListComprehensionExprs -> Expression ListComprehensionExprList | ListComprehension ListComprehensionExprList
+ListComprehensionContent -> ListComprehensionExprs ListComprehensionGenerator | ""
+
+ListComprehensionGenerator -> ":" Generators | ""
+
+Generator -> "for" GeneratorType "ID" "in" Expression ".." Expression
+
+Generators -> Generator GeneratorList
+GeneratorList -> "," Generator GeneratorList | ""
+
+Statement -> ID IDStmt
+	| BlockStmt
+	| IfStmt
+	| WhileStmt
+	| ForeachStmt
+
+IDStmt -> AssignmentStmt | ID CallStmt
+
+AssignmentExpr -> Expression | ListComprehension
+AssignmentStmt -> Index ":=" AssignmentExpr ";"
+Index -> "[" Expression "]" Index | ""
+
+CallStmt -> "(" CallParameters ")" ";"
+
+BlockStmt -> "begin" BlockVarStmt Statements "end"
+
+BlockVarStmt -> "var" VarDecls "do" | ""
+
+IfStmt -> "if" Expression "then" Statements ElseStmt IfEnd
+ElseStmt -> "else" Statements | ""
+
+WhileStmt -> "while" Expression VarBlock "do" Statements WhileStmtEnd
+WhileStmtEnd -> "end" | "endwhile"
+
+ForeachStmt -> ForeachGenerator ForeachGeneratorList
+	VarBlock "do" Statements ForeachStmtEnd
+ForeachGeneratorList -> "," ForeachGenerator ForeachGeneratorList | ""
+ForeachStmtEnd -> "end" | "endforeach"
+ForeachGenerator -> "foreach" GeneratorType ID "in" Expression ".." Expression
+GeneratorType -> Type | ""
+
+Statements -> Statement Statements | ""
+
+Action -> ActionName "action" ActionHead StatementBlock ActionEnd
+ActionEnd -> "end" | "endaction"
+ActionTag -> "ID" ActionTagIDs
+ActionTagIDs -> "." "ID" ActionTagIDs | ""
+ActionHead -> InputPatterns "==>" OutputExpressions
+	GuardBlock VarBlock
+InputPattern -> "ID" ":" "[" IDs "]" RepeatClause
+OutputExpressionContent -> Expression OutputExpressionContentList | ListComprehension OutputExpressionContentList
+OutputExpressionContentList -> "," OutputExpressionContent | ""
+OutputExpression -> "ID" ":" "[" OutputExpressionContent "]" RepeatClause
+RepeatClause -> "repeat" ConstCalc | ""
+IDs -> "ID" IDList
+IDList -> "," "ID" IDList | ""
+GuardBlock -> "guard" Expressions | ""
+VarBlock -> "var" VarDecls | ""
+ActionName -> ActionTag ":" | ""
+StatementBlock -> "do" Statements | ""
+
+InputPatterns -> InputPattern InputPatternList | ""
+InputPatternList -> "," InputPattern InputPatternList | ""
+OutputExpressions -> OutputExpression OutputExpressionList | ""
+OutputExpressionList -> "," OutputExpression OutputExpressionList | "" 
+
+InitializationAction -> "initialize" InitializerHead StatementBlock InitializationActionEnd | ""
+InitializationActionEnd -> "end" | "endinitialize"
+InitializerHead -> "==>" OutputExpressions
+	GuardBlock VarBlock
+
+ActionSchedule -> ScheduleFSM PriorityOrder
+
+ScheduleFSM -> "schedule" "fsm" "ID" ":"
+	StateTransitionList
+	ScheduleFSMEnd | ""
+ScheduleFSMEnd -> "end" | "endschedule"
+StateTransitionList -> StateTransition ";" StateTransitionList | ""
+StateTransition -> "ID" "(" ActionTags ")" "-->" "ID"
+
+ActionTags -> ActionTag ActionTagList
+ActionTagList -> "," ActionTag ActionTagList | ""
+
+PriorityOrder -> "priority" PriorityInequalityList "end" | ""
+PriorityInequality -> ActionTag ">" ActionTag ActionTagInequalityList
+PriorityInequalityList -> PriorityInequality ";" PriorityInequalityList | "" 
+ActionTagInequalityList -> ">" ActionTag ActionTagInequalityList | ""

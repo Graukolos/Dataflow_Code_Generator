@@ -3,6 +3,8 @@
 #include <filesystem>
 #include "Misc.hpp"
 #include "ABI/abi.hpp"
+#include <iostream>
+#include <fstream>
 
 /* Generate a simple base class all other actors inherit from.
  * This allows storing all actors in one list.
@@ -52,6 +54,7 @@ Code_Generation_C_Cpp::start_code_generation(
 	if (c->get_orcc_compat()) {
 		return generate_ORCC_compatibility_layer(c->get_target_dir());
 	}
+
 	return std::make_pair(std::string(), std::string());
 }
 

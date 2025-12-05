@@ -22,6 +22,13 @@ void Scheduling::find_actors_for_core(
 			}
 		}
 	}
+	for (auto it = dpn->get_composit_actors().begin();
+		it != dpn->get_composit_actors().end(); ++it)
+	{
+		if ((*it)->get_mapping() == core) {
+			list.insert((*it)->get_name());
+		}
+	}
 }
 
 /*

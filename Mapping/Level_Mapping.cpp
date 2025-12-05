@@ -3,6 +3,7 @@
 #include "Config/config.h"
 #include <algorithm>
 #include <vector>
+#include <iostream>
 
 static void lft(
 	IR::Dataflow_Network* dpn,
@@ -240,18 +241,18 @@ static IR::Actor_Instance* find_closest_least_predecessors(
 		if ((*it)->is_deleted()) {
 			continue;
 		}
-		if ((*it)->get_sink()->get_mapping() < c->get_cores() || (*it)->get_sink()->is_deleted()) {
+		if ((*it)->get_sink()->get_mapping() < c->get_cores() || dynamic_cast<IR::Actor_Instance*>((*it)->get_sink())->is_deleted()) {
 			continue;
 		}
 		if (ret == nullptr) {
-			ret = (*it)->get_sink();
-			val = count_unmapped_predecessors((*it)->get_sink(), c->get_cores());
+			ret = dynamic_cast<IR::Actor_Instance*>((*it)->get_sink());
+			val = count_unmapped_predecessors(ret, c->get_cores());
 		}
 		else {
-			size_t tmp_val = count_unmapped_predecessors((*it)->get_sink(), c->get_cores());
+			size_t tmp_val = count_unmapped_predecessors(dynamic_cast<IR::Actor_Instance*>((*it)->get_sink()), c->get_cores());
 			if (tmp_val < val) {
 				val = tmp_val;
-				ret = (*it)->get_sink();
+				ret = dynamic_cast<IR::Actor_Instance*>((*it)->get_sink());
 			}
 		}
 	}
@@ -272,19 +273,20 @@ static IR::Actor_Instance* find_closest(
 		if ((*it)->is_deleted()) {
 			continue;
 		}
-		if ((*it)->get_sink()->get_mapping() < c->get_cores() || (*it)->get_sink()->is_deleted()) {
+		if ((*it)->get_sink()->get_mapping() < c->get_cores() || dynamic_cast<IR::Actor_Instance*>((*it)->get_sink())->is_deleted()) {
 			continue;
 		}
-		if ((ret == nullptr) || (actor_level_map[(*it)->get_sink()] > ret_level)) {
-			ret = (*it)->get_sink();
+		IR::Actor_Instance* sink = dynamic_cast<IR::Actor_Instance*>((*it)->get_sink());
+		if ((ret == nullptr) || (actor_level_map[sink] > ret_level)) {
+			ret = sink;
 			ret_level = actor_level_map[ret];
-			val = count_unmapped_predecessors((*it)->get_sink(), c->get_cores());
+			val = count_unmapped_predecessors(sink, c->get_cores());
 		}
-		else if (actor_level_map[(*it)->get_sink()] == ret_level) {
-			size_t tmp_val = count_unmapped_predecessors((*it)->get_sink(), c->get_cores());
+		else if (actor_level_map[sink] == ret_level) {
+			size_t tmp_val = count_unmapped_predecessors(sink, c->get_cores());
 			if (tmp_val < val) {
 				val = tmp_val;
-				ret = (*it)->get_sink();
+				ret = sink;
 			}
 		}
 	}
@@ -306,22 +308,23 @@ static IR::Actor_Instance* find_closest_with_limit(
 		if ((*it)->is_deleted()) {
 			continue;
 		}
-		if ((*it)->get_sink()->get_mapping() < c->get_cores() || (*it)->get_sink()->is_deleted()) {
+		if ((*it)->get_sink()->get_mapping() < c->get_cores() || dynamic_cast<IR::Actor_Instance*>((*it)->get_sink())->is_deleted()) {
 			continue;
 		}
-		if (weight_map[(*it)->get_sink()] > weight_limit) {
+		IR::Actor_Instance* sink = dynamic_cast<IR::Actor_Instance*>((*it)->get_sink());
+		if (weight_map[sink] > weight_limit) {
 			continue;
 		}
-		if ((ret == nullptr) || (actor_level_map[(*it)->get_sink()] > ret_level)) {
-			ret = (*it)->get_sink();
+		if ((ret == nullptr) || (actor_level_map[sink] > ret_level)) {
+			ret = sink;
 			ret_level = actor_level_map[ret];
-			val = count_unmapped_predecessors((*it)->get_sink(), c->get_cores());
+			val = count_unmapped_predecessors(sink, c->get_cores());
 		}
-		else if (actor_level_map[(*it)->get_sink()] == ret_level) {
-			size_t tmp_val = count_unmapped_predecessors((*it)->get_sink(), c->get_cores());
+		else if (actor_level_map[sink] == ret_level) {
+			size_t tmp_val = count_unmapped_predecessors(sink, c->get_cores());
 			if (tmp_val < val) {
 				val = tmp_val;
-				ret = (*it)->get_sink();
+				ret = sink;
 			}
 		}
 	}

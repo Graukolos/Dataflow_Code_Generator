@@ -1,14 +1,13 @@
 #pragma once
 
 #include <string>
+#include "Actor_Instance_Base.hpp"
 
 namespace IR {
-	class Actor_Instance;
-
 	/* Information about an edge in the graph. */
 	class Edge {
-		IR::Actor_Instance* source;
-		IR::Actor_Instance* sink;
+		IR::Actor_Instance_Base* source;
+		IR::Actor_Instance_Base* sink;
 
 		std::string dst_id;
 		std::string dst_port;
@@ -23,7 +22,7 @@ namespace IR {
 		bool feedback = false;
 
 	public:
-		Edge(Actor_Instance* so, Actor_Instance* si) : source(so), sink(si) {
+		Edge(Actor_Instance_Base* so, Actor_Instance_Base* si) : source(so), sink(si) {
 
 		}
 
@@ -39,8 +38,8 @@ namespace IR {
 		}
 
 		Edge(
-			Actor_Instance* so,
-			Actor_Instance* si,
+			Actor_Instance_Base* so,
+			Actor_Instance_Base* si,
 			std::string dst_id,
 			std::string dst_port,
 			std::string src_id,
@@ -51,19 +50,19 @@ namespace IR {
 
 		}
 
-		IR::Actor_Instance* get_source(void) {
+		IR::Actor_Instance_Base* get_source(void) {
 			return source;
 		}
 
-		IR::Actor_Instance* get_sink(void) {
+		IR::Actor_Instance_Base* get_sink(void) {
 			return sink;
 		}
 
-		void set_source(IR::Actor_Instance* s) {
+		void set_source(IR::Actor_Instance_Base* s) {
 			source = s;
 		}
 
-		void set_sink(IR::Actor_Instance* s) {
+		void set_sink(IR::Actor_Instance_Base* s) {
 			sink = s;
 		}
 

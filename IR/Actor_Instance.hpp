@@ -1,18 +1,19 @@
 #pragma once
 
 #include "Actor.hpp"
-#include "Composit_Actor.hpp"
 #include <string>
 #include <vector>
 #include <map>
 #include <set>
-#include "Conversion/Actor_Conversion_Data.hpp"
+#include "Actor_Instance_Base.hpp"
+#include "Edge.hpp"
+#include "Composit_Actor.hpp"
+#include "AST/AST.hpp"
 
 namespace IR {
-	class Edge;
 
 	/* Information about an actor instance */
-	class Actor_Instance {
+	class Actor_Instance : public Actor_Instance_Base {
 
 		IR::Actor* actor;
 		std::string name;
@@ -38,13 +39,6 @@ namespace IR {
 		// actions of actor that shall not be part of the code for this instance
 		std::set<std::string> deleted_actions; 
 
-		/* If only this instance has been modified, e.g. by removing an connected channel, it requires a 
-		 * different conversion_data object.
-		 * Contains information relevant during and for conversion but not for the IR.
-		 */
-		bool use_instance_data{ false };
-		Actor_Conversion_Data conversion_data;
-
 		bool critical_path = false;
 		unsigned parallel_path_id = 0;
 
@@ -55,7 +49,11 @@ namespace IR {
 
 		unsigned id;
 
+		std::string identifier;
+
 		unsigned sched_loop_bound = 0;
+
+		AST::AST_Root* ast = nullptr;
 
 	public:
 
@@ -68,7 +66,7 @@ namespace IR {
 			composit = nullptr;
 		}
 
-		unsigned get_id(void) {
+		unsigned get_id(void) const {
 			return id;
 		}
 
@@ -96,7 +94,7 @@ namespace IR {
 			deleted = true;
 		}
 
-		bool is_deleted(void) {
+		bool is_deleted(void) const {
 			return deleted;
 		}
 
@@ -112,7 +110,7 @@ namespace IR {
 			cluster_id = id;
 		}
 
-		unsigned get_cluster_id(void) {
+		unsigned get_cluster_id(void) const {
 			return cluster_id;
 		}
 
@@ -168,40 +166,24 @@ namespace IR {
 			return false;
 		}
 
-		Actor_Conversion_Data& get_conversion_data(void) {
-			if (use_instance_data) {
-				return conversion_data;
-			}
-			else {
-				return actor->get_conversion_data();
-			}
-		}
-
-		Actor_Conversion_Data* get_conversion_data_ptr(void) {
-			if (use_instance_data) {
-				return &conversion_data;
-			}
-			else {
-				return actor->get_conversion_data_ptr();
-			}
-		}
-
 		void set_critical_path(bool b) {
 			critical_path = b;
 		}
-		bool get_critical_path(void) {
+		bool get_critical_path(void) const {
 			return critical_path;
 		}
 
 		void set_parallel_path_id(unsigned i) {
 			parallel_path_id = i;
 		}
-		unsigned get_parallel_path_id(void) {
+		unsigned get_parallel_path_id(void) const {
 			return parallel_path_id;
 		}
 
-		void add_predecessor(IR::Actor_Instance* inst) {
-			predecessors.insert(inst);
+		/* true if new predecessor, false if already known */
+		bool add_predecessor(IR::Actor_Instance* inst) {
+			auto x = predecessors.insert(inst);
+			return x.second;
 		}
 
 		bool is_predecessor(IR::Actor_Instance* inst) {
@@ -212,11 +194,11 @@ namespace IR {
 			return predecessors;
 		}
 
-		bool is_fork(void) {
+		bool is_fork(void) const {
 			return fork;
 		}
 
-		bool is_join(void) {
+		bool is_join(void) const {
 			return join ;
 		}
 
@@ -228,12 +210,7 @@ namespace IR {
 			join = true;
 		}
 
-		void update_conversion_data(void) {
-			conversion_data = actor->get_conversion_data();
-			use_instance_data = true;
-		}
-
-		int get_sched_order(void) {
+		int get_sched_order(void) const {
 			return sched_order;
 		}
 
@@ -246,6 +223,31 @@ namespace IR {
 		}
 		unsigned get_sched_loop_bound(void) {
 			return sched_loop_bound;
+		}
+
+		void set_identifier(std::string i) {
+			identifier = i;
+		}
+
+		std::string get_identifier(void) {
+			return identifier;
+		}
+
+		AST::AST_Root* get_ast(void) {
+			if (ast == nullptr) {
+				return actor->get_ast();
+			}
+			else {
+				return ast;
+			}
+		}
+
+		void copy_ast(void) {
+			ast = new AST::AST_Root{ *actor->get_ast() };
+		}
+
+		std::map<std::string, std::string>& get_const_map(void) {
+			return actor->get_const_map();
 		}
 	};
 };

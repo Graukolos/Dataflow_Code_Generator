@@ -18,10 +18,8 @@ namespace Scheduling {
 	 * Configuration.
 	 */
 	std::string generate_local_scheduler(
-		// map: function_name -> data in the order of the parameters of the generated function
-		Actor_Conversion_Data &conversion_data,
 		//map function_name -> guard
-		std::map<std::string, std::string>& action_guard,
+		std::map<std::string, AST::Action*>& action_guard,
 		std::vector<IR::FSM_Entry>& fsm,
 		std::vector<IR::Priority_Entry>& priorities,
 		Actor_Classification input_classification,
@@ -29,7 +27,10 @@ namespace Scheduling {
 		std::string prefix,
 		std::string schedule_function_name,
 		std::string schedule_function_parameter,
-		unsigned scheduling_loop_bound);
+		std::map<std::string, std::vector< Channel_Schedule_Data>>& actions,
+		std::map<std::string, std::string> replacements,
+		unsigned scheduling_loop_bound,
+		bool no_else = false);
 
 	/* Generate a global scheduler based on the mapping stored in the IR of the actor instances
 	 * and the Configuration.
@@ -40,7 +41,7 @@ namespace Scheduling {
 		Optimization::Optimization_Data_Phase2* opt_data2,
 		Mapping::Mapping_Data* map_data,
 		std::vector<std::string>& global_scheduling_routines,
-		std::map<std::string, Actor_Conversion_Data*>& actor_data_map);
+		std::map<std::string, std::string> schedulable_instances);
 
 
 	class Scheduler_Generation_Exception : public Converter_Exception {

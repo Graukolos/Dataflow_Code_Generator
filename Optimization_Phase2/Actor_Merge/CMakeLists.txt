@@ -1,0 +1,3 @@
+target_sources(Dataflow_Code_Generator PRIVATE
+	AST_Transformations.cpp
+	Merge_Optimization.cpp)

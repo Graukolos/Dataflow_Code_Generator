@@ -15,22 +15,7 @@ private:
 	std::string str;
 };
 
-class Wrong_Token_Exception : public Converter_Exception {
-public:
-	Wrong_Token_Exception(std::string _str) :Converter_Exception{ _str } {};
-};
-
 class Failed_Main_Creation_Exception : public Converter_Exception {
 public:
 	Failed_Main_Creation_Exception(std::string _str) : Converter_Exception{ _str } {};
-};
-
-class Tokenizer_Exception : public Converter_Exception {
-public:
-	Tokenizer_Exception(std::string _str) : Converter_Exception{ _str } {};
-};
-
-class Unsupported_Feature_Exception : public Converter_Exception {
-public:
-	Unsupported_Feature_Exception(std::string _str) : Converter_Exception{ _str } {};
 };

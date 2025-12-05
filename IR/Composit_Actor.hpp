@@ -1,38 +1,147 @@
 #pragma once
 
 #include <string>
-#include "Conversion/Actor_Conversion_Data.hpp"
+#include "AST/AST.hpp"
+#include "Actor_Instance_Base.hpp"
+#include "Dataflow_Analysis/Actor_Classification/Actor_Classification.hpp"
 
 namespace IR {
 
-	/* Information about a composit actor. This is for future use and has be created during optimization. */
-	class Composit_Actor {
-		std::string name;
-		Actor_Conversion_Data conversion_data;
+	/* Information about a composit actor. */
+	class Composit_Actor : public Actor_Instance_Base {
 
-		unsigned sched_loop_bound;
+		AST::AST_Root* ast;
+		std::map<std::string, std::string> const_map;
+
+		AST::Action* done_action = nullptr;
+		AST::Action* do_action = nullptr;
+		AST::Action* init_action = nullptr;
+		AST::Action* initialize_action = nullptr;
+
+		std::string name;
+		unsigned id;
+		unsigned loop_bound = 0;
+		unsigned mapping = 0;
+
+		std::vector<Edge*> in_edges;
+		std::vector<Edge*> out_edges;
+
+		std::vector<Unit*> imported_symbols;
+
+		/* Classification of the input channel tokenrates. Might differ from the output classification! */
+		Actor_Classification input_classification{ Actor_Classification::dynamic_rate };
+		/* Classification of the output channel tokenrates, might differ from the input classification! */
+		Actor_Classification output_classification{ Actor_Classification::dynamic_rate };
 
 	public:
+		Composit_Actor(std::string _name, unsigned _id, unsigned _core) : name{ _name }, id{ _id }, mapping{ _core } {
+			ast = new AST::AST_Root{};
+			ast->actor = new AST::Actor{};
+			AST::Action_Priority* prio = new AST::Action_Priority{};
+			prio->prio_rel.push_back(AST::ID{ .name = "init_action" });
+			prio->prio_rel.push_back(AST::ID{ .name = "do_action" });
+			prio->prio_rel.push_back(AST::ID{ .name = "done_action" });
+		};
 
-		Composit_Actor(std::string n) : name{ n } {};
+		AST::AST_Root* get_ast(void) {
+			return ast;
+		}
 
-		std::string get_name(void) {
+		std::string get_class(void) {
 			return name;
 		}
 
-		Actor_Conversion_Data& get_conversion_data(void) {
-			return conversion_data;
+		std::string get_name(void) {
+			return name + "_inst";
 		}
 
-		Actor_Conversion_Data* get_conversion_data_ptr(void) {
-			return &conversion_data;
+		std::map<std::string, std::string>& get_const_map(void) {
+			return const_map;
 		}
 
-		void set_sched_loop_bound(unsigned b) {
-			sched_loop_bound = b;
+		AST::Action* get_done_action(void)
+		{
+			if (done_action == nullptr) {
+				done_action = new AST::Action{};
+				done_action->name.name = "done_action";
+				ast->actor->actions.push_back(done_action);
+			}
+			return done_action;
 		}
+		AST::Action* get_do_action(void)
+		{
+			if (do_action == nullptr) {
+				do_action = new AST::Action{};
+				do_action->name.name = "do_action";
+				ast->actor->actions.push_back(do_action);
+			}
+			return do_action;
+		}
+		AST::Action* get_init_action(void)
+		{
+			if (init_action == nullptr) {
+				init_action = new AST::Action{};
+				init_action->name.name = "init_action";
+				ast->actor->actions.push_back(init_action);
+			}
+			return init_action;
+		}
+		AST::Action* get_initialize_action(void)
+		{
+			if (initialize_action == nullptr) {
+				initialize_action = new AST::Action{};
+				ast->actor->init = initialize_action;
+			}
+			return initialize_action;
+		}
+
 		unsigned get_sched_loop_bound(void) {
-			return sched_loop_bound;
+			return loop_bound;
 		}
+		void set_sched_loop_bound(unsigned b) {
+			loop_bound = b;
+		}
+
+		unsigned get_mapping(void) {
+			return mapping;
+		}
+
+		std::vector<IR::Edge*>& get_out_edges(void) {
+			return out_edges;
+		}
+
+		std::vector<IR::Edge*>& get_in_edges(void) {
+			return in_edges;
+		}
+
+		void add_in_edge(IR::Edge* e) {
+			in_edges.push_back(e);
+		}
+
+		void add_out_edge(IR::Edge* e) {
+			out_edges.push_back(e);
+		}
+
+		std::vector<Unit*>& get_imported_symbols(void) {
+			return imported_symbols;
+		}
+		void add_imported_symbol(Unit* u) {
+			imported_symbols.push_back(u);
+		}
+
+		Actor_Classification get_input_classification(void) {
+			return input_classification;
+		}
+		void set_input_classification(Actor_Classification a) {
+			input_classification = a;
+		}
+		Actor_Classification get_output_classification(void) {
+			return output_classification;
+		}
+		void set_output_classification(Actor_Classification a) {
+			output_classification = a;
+		}
+
+
 	};
 }

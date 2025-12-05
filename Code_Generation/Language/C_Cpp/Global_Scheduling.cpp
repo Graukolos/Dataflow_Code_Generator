@@ -2,13 +2,7 @@
 #include "Config/config.h"
 #include "Dataflow_Analysis/Scheduling_Lib/Scheduling_Lib.hpp"
 #include "ABI/abi.hpp"
-
-static std::string find_class_name(
-	std::string actor_name,
-	std::map<std::string, Actor_Conversion_Data*>& actor_data_map)
-{
-	return actor_data_map[actor_name]->get_class_name();
-}
+#include <iostream>
 
 static std::string basic_non_preemptive(
 	IR::Dataflow_Network* dpn,
@@ -16,7 +10,7 @@ static std::string basic_non_preemptive(
 	Optimization::Optimization_Data_Phase2* opt_data2,
 	Mapping::Mapping_Data* map_data,
 	std::vector<std::string>& global_scheduling_routines,
-	std::map<std::string, Actor_Conversion_Data*>& actor_data_map)
+	std::map<std::string, std::string> schedulable_instances)
 {
 	std::string result;
 	Config* c = c->getInstance();
@@ -33,7 +27,7 @@ static std::string basic_non_preemptive(
 	 */
 	if (map_data->actor_sharing) {
 		// Actor sharing is active, hence, we must make sure to run an actor only on one PE at the same time
-		for (auto it = actor_data_map.begin(); it != actor_data_map.end(); ++it) {
+		for (auto it = schedulable_instances.begin(); it != schedulable_instances.end(); ++it) {
 			std::string tmp;
 			ABI_ATOMIC_DECL(c, tmp, it->first, "");
 			result.append(tmp);
@@ -44,13 +38,13 @@ static std::string basic_non_preemptive(
 		std::vector<std::string> actors;
 		if (c->get_topology_sort()) {
 			std::set<std::string> tmp;
-			for (auto it = actor_data_map.begin(); it != actor_data_map.end(); ++it) {
+			for (auto it = schedulable_instances.begin(); it != schedulable_instances.end(); ++it) {
 				tmp.insert(it->first);
 			}
 			Scheduling::topology_sort(tmp, dpn, actors);
 		}
 		else {
-			for (auto it = actor_data_map.begin(); it != actor_data_map.end(); ++it) {
+			for (auto it = schedulable_instances.begin(); it != schedulable_instances.end(); ++it) {
 				actors.push_back(it->first);
 			}
 		}
@@ -72,10 +66,10 @@ static std::string basic_non_preemptive(
 			}
 			else {
 				if (c->get_static_alloc()) {
-					result.append("\t\t\t" + find_class_name(*it, actor_data_map) + "_schedule(&" + *it + ");\n");
+					result.append("\t\t\t" + *it + "_schedule(&" + *it + ");\n");
 				}
 				else {
-					result.append("\t\t\t" + find_class_name(*it, actor_data_map) + "_schedule(" + *it + ");\n");
+					result.append("\t\t\t" + *it + "_schedule(" + *it + ");\n");
 				}
 			}
 			ABI_ATOMIC_CLEAR(c, tmp, *it, "\t\t\t");
@@ -137,10 +131,10 @@ static std::string basic_non_preemptive(
 					}
 					else {
 						if (c->get_static_alloc()) {
-							result.append("\t\t" + find_class_name(*it, actor_data_map) + "_schedule(&" + *it + ");\n");
+							result.append("\t\t" + *it + "_schedule(&" + *it + ");\n");
 						}
 						else {
-							result.append("\t\t" + find_class_name(*it, actor_data_map) + "_schedule(" + *it + ");\n");
+							result.append("\t\t" + *it + "_schedule(" + *it + ");\n");
 						}
 					}
 				}
@@ -163,7 +157,7 @@ std::string Scheduling::generate_global_scheduler(
 	Optimization::Optimization_Data_Phase2* opt_data2,
 	Mapping::Mapping_Data* map_data,
 	std::vector<std::string>& global_scheduling_routines,
-	std::map<std::string, Actor_Conversion_Data*>& actor_data_map)
+	std::map<std::string, std::string> schedulable_instances)
 {
-	return basic_non_preemptive(dpn, opt_data1, opt_data2, map_data, global_scheduling_routines, actor_data_map);
+	return basic_non_preemptive(dpn, opt_data1, opt_data2, map_data, global_scheduling_routines, schedulable_instances);
 }

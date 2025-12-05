@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IR/Actor_Instance.hpp"
+#include "IR/Composit_Actor.hpp"
 #include "IR/Edge.hpp"
 #include "IR/Actor.hpp"
 #include "IR/Unit.hpp"
@@ -58,8 +59,9 @@ namespace IR {
 			return id_instance_map[id];
 		}
 
-		void add_edge(Edge& e) {
+		Edge* add_edge(Edge& e) {
 			edges.push_back(e);
+			return &(edges.back());
 		}
 
 		void set_edges(std::vector<Edge> e) {

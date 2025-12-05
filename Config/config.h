@@ -65,6 +65,8 @@ class Config {
     //Optimization
     bool prune_disconnected{ false };
     bool optimize_scheduling{ false };
+    bool optimize_core_merge{ false };
+    bool prolog_epilog_opt{ true };
 
     //verbose
     bool verbose_read{ false };
@@ -409,5 +411,19 @@ public:
     }
     bool get_verbose_classify(void) {
         return verbose_classify;
+    }
+
+    void set_optimize_core_merge(void) {
+        optimize_core_merge = true;
+    }
+    bool get_optimize_core_merge(void) {
+        return optimize_core_merge;
+    }
+
+    void clear_prolog_epilog_opt(void) {
+        prolog_epilog_opt = false;
+    }
+    bool get_prolog_epilog_opt(void) {
+        return prolog_epilog_opt;
     }
 };

@@ -1,5 +1,7 @@
 #include "Reader/Reader.hpp"
 #include "Config/config.h"
+#include <fstream>
+#include <sstream>
 
 IR::Unit* Network_Reader::read_unit(
 	IR::Dataflow_Network* dpn,
@@ -8,6 +10,7 @@ IR::Unit* Network_Reader::read_unit(
 	Config* c = c->getInstance();
 	std::filesystem::path full_path{ c->get_source_dir() };
 	full_path /= path;
+	full_path.replace_extension("cal");
 
 	if (dpn->get_unit(full_path.string()) != nullptr) {
 		return dpn->get_unit(full_path.string());

@@ -26,6 +26,7 @@ the input is a completely valid CAL+XDF specification.
       |-----------------------|
       |                       |
       |   IR Transformation   |
+      |   + AST Generation    |  
       |                       |
       |-----------------------|
                 |
@@ -33,7 +34,7 @@ the input is a completely valid CAL+XDF specification.
                 |
       |-----------------------|
       |                       |
-      |  Dataflow Analysis    |
+      |  Actor Classification |
       |                       |
       |-----------------------|
                 |
@@ -74,7 +75,7 @@ the input is a completely valid CAL+XDF specification.
 
 **IR Transform**: Transform the read network and actors into a representation that is used throughout the whole code generation and all of the necessary preprocessings.
 
-**Dataflow Analysis**: The actors are classified into different classes, e.g. static and dynamic. Input and output behaviour are classified separately. Source and Sink actors are detected and feedback loops are classified.
+**Actor Classification**: The actors are classified into different classes, e.g. static and dynamic. Input and output behaviour are classified separately.
 
 **Otimization Phase 1**: Optimization that should be carried out before computing the mapping, e.g. the deletion of certain actors or connections. This might simply the mapping or avoid a mapping based on a changing network.
 
@@ -90,17 +91,17 @@ the input is a completely valid CAL+XDF specification.
 The top-level directories of this repo:
 
 * **Reader**: Read the network and actors
-* **IR**: Transform the read network to some intermediate representation, e.g. extracting token rates, guard conditions, FSM, priorities, ...
+* **rapidxml-1.13**: Code used to read the XML files, the code is not developed in the scope of this project and is an external dependency: https://github.com/Fe-Bell/RapidXML
+* **IR**: Transform the read network to some intermediate representation, e.g. extracting token rates, guard conditions, FSM, priorities, ... and AST
 * **common**: Common (header) files, e.g. for Exceptions and some Helpers
-*  - **include**
-*    - **rapidxml-1.13**: Code used to read the XML files, the code is not developed in the scope of this project and is an external dependency: https://github.com/Fe-Bell/RapidXML
 * **Config**: Configuration (storing the configuration made by command line options) and Debug Defines header
-* **Tokenizer**: Tokenizer and Token Buffers to temporarily postpone their processing
-* **Conversion**: Library to read data from CAL sources, required for tokenrate determination
+* **Lexer**: Lexer for defined grammar
+* **Parser**: Parser for defined grammar
+* **Actor_Classification**: Classification of the actors into static, cyclo-static, ... , dynamic. For all classifications read the header in this directory
+* **Conversion**: Library to convert CAL to C/C++, provides also code to check for unsupported features
 * **Optimization_Phase1**: Optimization phase 1 code
 * **Optimization_Phase2**: Optimization phase 2 code
 * **Mapping**: Mapping computation
-* **Dataflow_Analysis**: Analyis of tokenrates, feedback cycles, source and sink actors and Scheduling
 * **Code_Generation**: Code generation for the actors (class including functions, actions, variables and local scheduler), the main (initialize channels, actors, call their init methods and global scheduling), cmake, and buffer implementation. This directory contains a subdirectory for *scheduling* including a lib that can be used to implement new scheduling strategies.
 
 ### Adding Mapping, Optimization and Scheduling Strategies
@@ -172,17 +173,19 @@ The code generator provides the following command line options:
   * round_robin: Use round-robin scheduling. Actor instances can only fire one action, then they return to the global scheduler.
 * --list_schedule : Use a list for scheduling instead of hard-coded order of local scheduler calls in the code. This produces more flexible code, but has no specific purpose.
 * --bound_sched \<number\>: Execute the local scheduler a bounded number of times at maximum before returning.
-* --bound_sched_file \<file\>: Scheduling loop bounds for specific actors in the network, not specified actors fall back to default.
-								<?xml version="1.0" encoding="UTF-8"?>
-								<Loopbound>
-								<Bound name="example_inst" value ="13"/>
-								</Loopbound>
+* --bound_sched_file <file>: Use bound loops for local scheduling for each actor instance.
+				
 ### Optimizations
 * --prune_unconnected : Remove unconnected channels from actors instances and generate separate code for them. Otherwise the unconnected channels are set to nullptr for the constructor parameters. This feature is rather experimental and not properly tested! Reading tokens from ports without an attached channel are replaced by using variables initalized with zero or uninitialized arrays.
 * --opt_sched : Fetch channel sizes before entering the local scheduler loop and use this values for scheduling. This avoids reading the channel sizes during each scheduler iteration, in the worst-case several times.
+* --opt_cmerge: Merge adjacent actor instances on the same core.
+* --no-pe: Omit prolog and epilog split in actor merge.
+
+### Verbosity
+* --verbose=<Option>
+* --silent: No output at all except runtime.
 
 ## Future Work
-* Implementation of Actor Merging
 * Improved Mapping and Scheduling Strategies
 * Dead Code Elimination
 * Improved Memory Handling for Channels/Token Transfer

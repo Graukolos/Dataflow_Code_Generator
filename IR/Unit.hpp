@@ -1,12 +1,10 @@
 #pragma once
 #include <string>
-#include "Tokenizer/Token_Container.hpp"
-#include "common/include/Exceptions.hpp"
-#include "Tokenizer/Method_Buffer.hpp"
-#include "Tokenizer/Tokenizer.hpp"
-#include "Tokenizer/Var_Buffer.hpp"
-#include "Tokenizer/Native_Buffer.hpp"
+#include "AST/AST.hpp"
 #include <vector>
+#include "Lexer/Lexer.hpp"
+#include "Parser/Parser.hpp"
+#include "AST_Analysis/AST_Analysis.hpp"
 
 namespace IR {
 
@@ -17,42 +15,49 @@ namespace IR {
 
 		std::string code;
 		bool initialized{ false };
+		std::vector<Unit*> sub_units;
 
-		std::vector<Var_Buffer> var_buffers{};
-		std::vector<Method_Buffer> method_buffers{};
-		std::vector<Native_Buffer> native_buffers{};
+		AST::AST_Root* ast;
 
-		std::vector<std::pair<std::string, Unit*>> sub_units;
-
-		void convert_imports(Token& t, Tokenizer& b, IR::Dataflow_Network* dpn);
+		void convert_imports(IR::Dataflow_Network* dpn);
 
 	public:
-
+		
 		Unit(std::string c) : code{ c } {
-
+			ast = nullptr;
 		}
 
-		void add_var_buffer(Var_Buffer& b) {
-			var_buffers.push_back(b);
-		}
-		std::vector<Var_Buffer>& get_var_buffers(void) {
-			return var_buffers;
+		void initialize(IR::Dataflow_Network *dpn) {
+			if (initialized) {
+				return;
+			}
+			initialized = true;
+
+			Lexer::Lexer l{ code };
+			Parser::Parser_Class p{ &l };
+			ast = p.parse();
+
+			convert_imports(dpn);
 		}
 
-		void add_method_buffer(Method_Buffer& b) {
-			method_buffers.push_back(b);
-		}
-		std::vector<Method_Buffer>& get_method_buffers(void) {
-			return method_buffers;
+		AST::AST_Root* get_ast(void) {
+			return ast;
 		}
 
-		void add_native_buffer(Native_Buffer& b) {
-			native_buffers.push_back(b);
-		}
-		std::vector<Native_Buffer>& get_native_buffers(void) {
-			return native_buffers;
+		std::vector<AST::AST_Root*> get_imported_units(void)
+		{
+			std::vector<AST::AST_Root*> ret;
+
+			for (auto x : sub_units) {
+				ret.push_back(x->get_ast());
+			}
+
+			return ret;
 		}
 
-		void initialize(IR::Dataflow_Network* dpn);
+		std::vector<Unit*>& get_sub_units(void)
+		{
+			return sub_units;
+		}
 	};
 }

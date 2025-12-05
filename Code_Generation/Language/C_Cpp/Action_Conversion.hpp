@@ -1,17 +1,13 @@
 #pragma once
 
-#include "Tokenizer/Tokenizer.hpp"
 #include <map>
 #include <string>
-#include "Conversion/Actor_Conversion_Data.hpp"
-#include "Tokenizer/Action_Buffer.hpp"
 #include "IR/Action.hpp"
 #include <set>
+#include "Dataflow_Analysis/Scheduling_Lib/Scheduling_Data.hpp"
 
 std::string convert_action(
 	IR::Action* action,
-	Action_Buffer* token_producer,
-	Actor_Conversion_Data& actor_data,
 	/* Set to true if the input channels shall not be read directly,
 	   instead parameters are added to the generated function.
 	 */
@@ -22,4 +18,10 @@ std::string convert_action(
 	bool output_channel_parameters,
 	std::set<std::string> unused_in_channels,
 	std::set<std::string> unused_out_channels,
-	std::string prefix = "");
+	std::string prefix,
+	std::map<std::string, std::string> replacements,
+	std::map<std::string, std::vector<Scheduling::Channel_Schedule_Data>>& scheduledata,
+	std::string class_name,
+	std::map<std::string, std::string> port_type_map,
+	std::map<std::string, std::string> const_map,
+	std::string additional_code = "");

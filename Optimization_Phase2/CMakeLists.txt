@@ -1,2 +1,4 @@
+add_subdirectory(Actor_Merge)
+
 target_sources(Dataflow_Code_Generator PRIVATE
 	Optimization_Phase2.cpp)

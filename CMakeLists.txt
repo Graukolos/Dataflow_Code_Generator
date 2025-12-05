@@ -21,8 +21,10 @@ endif()
 
 set_property(TARGET Dataflow_Code_Generator PROPERTY CXX_STANDARD_REQUIRED 17)
 
+add_subdirectory(AST_Analysis)
 add_subdirectory(Dataflow_Analysis)
-add_subdirectory(Tokenizer)
+add_subdirectory(Lexer)
+add_subdirectory(Parser)
 add_subdirectory(Reader)
 add_subdirectory(Optimization_Phase1)
 add_subdirectory(Optimization_Phase2)

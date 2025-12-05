@@ -6,6 +6,7 @@
 #include <filesystem>
 #include "Language/C_Cpp/Generate_C_Cpp.hpp"
 #include "rapidxml-1.13/rapidxml.hpp"
+#include <iostream>
 
 /* Differences of the actor instance from the base actor.
  * Differences might stem from unconnected ports or DCE.
@@ -189,6 +190,10 @@ void Code_Generation::generate_code(
 	// Not used for composit actors as they are all tailored to the corresponding setup anyhow
 	std::map<std::string, std::vector<Actor_Diff_Data>> actor_variants_map;
 
+	std::map<std::string, std::map<std::string, std::string>> constructor_defaults;
+	std::map<std::string, std::vector<std::string>> constructor_order;
+	std::map<std::string, std::string> schedulables;
+
 	for (auto it = dpn->get_actor_instances().begin();
 		it != dpn->get_actor_instances().end(); ++it)
 	{
@@ -255,12 +260,12 @@ void Code_Generation::generate_code(
 #endif
 			}
 
-			Actor_Conversion_Data& d = a->get_conversion_data();
 			std::string name = a->get_class_name();
 			if (name.find_last_of('.') != std::string::npos) {
 				name = name.substr(name.find_last_of('.') + 1);
 			}
 			name[0] = std::toupper(name[0]);
+			a->set_identifier(name);
 
 			if (actor_variants_map.contains(name)) {
 				// Figure out whether we already created this kind of actor variation
@@ -317,7 +322,6 @@ void Code_Generation::generate_code(
 			}
 			else {
 				variant->name = variant->actor->get_name();
-				variant->actor->update_conversion_data();
 			}
 		}
 	}
@@ -325,31 +329,55 @@ void Code_Generation::generate_code(
 	//Finally start with the code generation.
 	for (auto it = actor_variants_map.begin(); it != actor_variants_map.end(); ++it) {
 		for (auto variant = it->second.begin(); variant != it->second.end(); ++variant) {
-			variant->actor->get_conversion_data().set_class_name(variant->name);
+
+			std::map<std::string, std::string> defaults;
+			std::vector<std::string> order;
+			std::string classname = variant->name;
 			auto i = Code_Generation_C_Cpp::generate_actor_code(variant->actor, variant->name, variant->unused_actions,
-				variant->unused_in_channels, variant->unused_out_channels, opt_data1, opt_data2, map_data, channel_include, variant->scheduling_loop_bound);
+				variant->unused_in_channels, variant->unused_out_channels, opt_data1, opt_data2, map_data, channel_include, defaults, order, variant->scheduling_loop_bound);
 			if (!i.first.empty()) {
 				includes.push_back(i.first);
 			}
 			if (!i.second.empty()) {
 				sources.push_back(i.second);
 			}
+			constructor_defaults[classname] = defaults;
+			constructor_order[classname] = order;
+			variant->actor->set_identifier(classname);
+			schedulables[variant->actor->get_name()] = classname;
 		}
 	}
 
 	for (auto it = dpn->get_composit_actors().begin();
 		it != dpn->get_composit_actors().end(); ++it)
 	{
-		auto i = Code_Generation_C_Cpp::generate_composit_actor_code(*it, opt_data1, opt_data2, map_data, channel_include, (*it)->get_sched_loop_bound());
+		std::map<std::string, std::string> defaults;
+		std::vector<std::string> order;
+		auto i = Code_Generation_C_Cpp::generate_composit_actor_code(*it, opt_data1, opt_data2, map_data, channel_include, defaults, order, (*it)->get_sched_loop_bound());
 		if (!i.first.empty()) {
 			includes.push_back(i.first);
 		}
 		if (!i.second.empty()) {
 			sources.push_back(i.second);
 		}
+		schedulables[(*it)->get_name()] = (*it)->get_class();
+		constructor_defaults[(*it)->get_class()] = defaults;
+		constructor_order[(*it)->get_class()] = order;
 	}
 
-	auto i = Code_Generation_C_Cpp::generate_core(dpn, opt_data1, opt_data2, map_data, includes);
+	for (auto it = dpn->get_actor_instances().begin();
+		it != dpn->get_actor_instances().end(); ++it)
+	{
+		if ((*it)->is_deleted()) {
+			continue;
+		}
+		if ((*it)->get_identifier().empty()) {
+			schedulables[(*it)->get_name()] = (*it)->get_actor()->get_identifier();
+			(*it)->set_identifier((*it)->get_actor()->get_identifier());
+		}
+	}
+
+	auto i = Code_Generation_C_Cpp::generate_core(dpn, opt_data1, opt_data2, map_data, includes, schedulables, constructor_defaults, constructor_order);
 	//ignorning first element as it is the header only adding source to sources
 	sources.push_back(i.second);
 

@@ -1,5 +1,8 @@
 #include "Dataflow_Analysis/Dataflow_Analysis.hpp"
 #include "Config/config.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
 #include "rapidxml-1.13/rapidxml.hpp"
 using namespace rapidxml;
 
@@ -18,7 +21,7 @@ static bool is_real_fork(
 			}
 			auto suc = find_out_edge(inst, p->buffer_name);
 			if (suc != nullptr) {
-				s.push_back(suc->get_sink());
+				s.push_back(dynamic_cast<IR::Actor_Instance*>(suc->get_sink()));
 			}
 		}
 		recognized_successors.push_back(s);
@@ -49,7 +52,7 @@ static bool is_real_join(
 			}
 			auto pre = find_in_edge(inst, p->buffer_name);
 			if (pre != nullptr) {
-				s.push_back(pre->get_source());
+				s.push_back(dynamic_cast<IR::Actor_Instance*>(pre->get_source()));
 			}
 		}
 		recognized_predecessors.push_back(s);
@@ -223,8 +226,9 @@ static void detect_feedback_loops(IR::Dataflow_Network* dpn) {
 		auto x = process_list.begin();
 		IR::Edge* cur = *x;
 		process_list.erase(x);
-		IR::Actor_Instance* src = cur->get_source();
-		IR::Actor_Instance* sink = cur->get_sink();
+
+		IR::Actor_Instance* src = dynamic_cast<IR::Actor_Instance*>(cur->get_source());
+		IR::Actor_Instance* sink = dynamic_cast<IR::Actor_Instance*>(cur->get_sink());
 
 		if (src->is_predecessor(sink)) {
 			/* successor is also predecessor, must be feedback */
@@ -234,16 +238,18 @@ static void detect_feedback_loops(IR::Dataflow_Network* dpn) {
 #endif
 		}
 		else {
-
+			bool addition = false;
 			for (auto it = src->get_predecessors().begin();
 				it != src->get_predecessors().end(); ++it)
 			{
-				sink->add_predecessor(*it);
+				addition |= sink->add_predecessor(*it);
 			}
-			sink->add_predecessor(src);
+			addition |= sink->add_predecessor(src);
 
-			for (auto out = sink->get_out_edges().begin(); out != sink->get_out_edges().end(); ++out) {
-				process_list.push_back(*out);
+			if (addition) {
+				for (auto out = sink->get_out_edges().begin(); out != sink->get_out_edges().end(); ++out) {
+					process_list.push_back(*out);
+				}
 			}
 		}
 	}
@@ -292,6 +298,34 @@ void Dataflow_Analysis::network_analysis(IR::Dataflow_Network* dpn) {
 #ifdef DEBUG_DATAFLOW_ANALYSIS
 			std::cout << "Detected join actor instance: " << (*it)->get_name() << std::endl;
 #endif
+		}
+	}
+
+	/* check if ports are used in the network definition that don't exist */
+	for (auto it = dpn->get_actor_instances().begin(); it != dpn->get_actor_instances().end(); ++it) {
+		for (auto in = (*it)->get_in_edges().begin(); in != (*it)->get_in_edges().end(); ++in) {
+			std::string portname = (*in)->get_dst_port();
+			bool found = false;
+			for (auto port : (*it)->get_ast()->actor->inports) {
+				if (port->name.name == portname) {
+					found = true;
+				}
+			}
+			if (!found) {
+				throw Converter_Exception{ "Inport " + portname + " of instance " + (*it)->get_name() + " does not exist."};
+			}
+		}
+		for (auto out = (*it)->get_out_edges().begin(); out != (*it)->get_out_edges().end(); ++out) {
+			std::string portname = (*out)->get_src_port();
+			bool found = false;
+			for (auto port : (*it)->get_ast()->actor->outports) {
+				if (port->name.name == portname) {
+					found = true;
+				}
+			}
+			if (!found) {
+				throw Converter_Exception{ "Outport " + portname + " of instance " + (*it)->get_name() + " does not exist." };
+			}
 		}
 	}
 }

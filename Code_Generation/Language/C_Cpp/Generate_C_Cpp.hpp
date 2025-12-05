@@ -28,7 +28,10 @@ namespace Code_Generation_C_Cpp {
 		Optimization::Optimization_Data_Phase1* opt_data1,
 		Optimization::Optimization_Data_Phase2* opt_data2,
 		Mapping::Mapping_Data* map_data,
-		std::vector<std::string>& includes);
+		std::vector<std::string>& includes,
+		std::map<std::string, std::string> schedulable_instances,
+		std::map<std::string, std::map<std::string, std::string>> default_param_maps,
+		std::map<std::string, std::vector<std::string>> param_order_map);
 
 	/* Generate the channel implementations. */
 	std::pair<Header, Source> generate_channel_code(
@@ -47,6 +50,8 @@ namespace Code_Generation_C_Cpp {
 		Optimization::Optimization_Data_Phase2* opt_data2,
 		Mapping::Mapping_Data* map_data,
 		std::string channel_include,
+		std::map<std::string, std::string>& default_constructor_params,
+		std::vector<std::string>& constructor_parameter_order,
 		unsigned scheduling_loop_bound);
 
 	/* Generate the code for a composit actor - future work. */
@@ -56,5 +61,7 @@ namespace Code_Generation_C_Cpp {
 		Optimization::Optimization_Data_Phase2* opt_data2,
 		Mapping::Mapping_Data* map_data,
 		std::string channel_include,
+		std::map<std::string, std::string>& default_constructor_params,
+		std::vector<std::string>& constructor_parameter_order,
 		unsigned scheduling_loop_bound);
 };

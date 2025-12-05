@@ -1,2225 +1,622 @@
 #include "Converter_RVC_Cpp.hpp"
-#include <iostream>
-#include <algorithm>
+#include "Conversion/Conversion.hpp"
 #include "Config/config.h"
-#include <cstdlib>
+#include "ABI/abi.hpp"
+#include <iostream>
+
 
 namespace Converter_RVC_Cpp {
-	std::string convert_inline_if_with_list_assignment(
-		std::string string_to_convert,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string prefix,
-		std::string outer_expression);
-
-	std::string find_unused_name(
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map)
-	{
-		for (int i = 1;; ++i) {
-			std::string output{ "_" + std::to_string(i) };
-			if ((global_map.find(output) == global_map.end())
-				&& (local_map.find(output) == local_map.end()))
-			{
-				local_map[output] = "";
-				return output;
-			}
-		}
-	}
-
-	std::string convert_string(
-		Token& t,
-		Token_Container& token_producer)
-	{
-		std::string output{};
-		if (t.str == "\"") {
-			output.append("\"");
-			t = token_producer.get_next_token();
-			while (t.str != "\"") {
-				if (t.str == "\\") {
-					t = token_producer.get_next_token();
-					output.append("\\" + t.str);
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(t.str);
-				}
-				t = token_producer.get_next_token();
-				if (t.str != "\"") {
-					output.append(" ");
-				}
-			}
-			output.append("\"");
-			//must be string termination
-			t = token_producer.get_next_token();
-		}
-		return output;
-	}
-
-	namespace {
-		std::string convert_list_comprehension(
-			std::string string_to_convert,
-			std::string list_name,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map,
-			std::map<std::string, std::string>& symbol_type_map,
-			std::string prefix = "",
-			std::string outer_expression = "",
-			bool nested = false);
-
-
-		std::string convert_function_call_brakets(
-			Token& t,
-			Token_Container& token_producer,
-			bool println = false)
-		{
-			Config* c = c->getInstance();
-			std::string output{};
-			if (println && c->get_target_language() == Target_Language::cpp) {
-				output.append(" << ");
-			}
-			else {
-				output.append("(");
-			}
-			t = token_producer.get_next_token();
-			bool something_to_print{ false };
-			bool to_string_added{ false };
-			while (t.str != ")") {
-				if (t.str == "(") {
-					output.append(convert_function_call_brakets(t, token_producer));
-				}
-				else if (t.str == "\"") {
-					std::string tmp{ convert_string(t, token_producer) };
-					output.append(tmp);
-					something_to_print = true;
-				}
-				else if (t.str == "+" && println && c->get_target_language() == Target_Language::cpp) {
-					if (to_string_added) {
-						output.append(")");
-						to_string_added = false;
-					}
-					output.append(" << ");
-					t = token_producer.get_next_token();
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					if (println && c->get_target_language() == Target_Language::cpp) {
-						// it is not a string, hence, we should add std::to_string for printing, just to be safe
-						if (!to_string_added) {
-							output.append("std::to_string(");
-							to_string_added = true;
-						}
-						output.append(t.str);
-					}
-					else {
-						output.append(t.str);
-					}
-					something_to_print = true;
-					t = token_producer.get_next_token();
-				}
-			}
-			if (!(println && c->get_target_language() == Target_Language::cpp) || to_string_added) {
-				output.append(")");
-			}
-			t = token_producer.get_next_token();
-			if (println && !something_to_print) {
-				//if the brackets are empty there is nothing to print,
-				//so a empty string will be returned to avoid << << without anything in between
-				return "";
-			}
-			return output;
-		}
-	}
-
-	namespace {
-		
-		std::string get_full_list(
-			Token& t,
-			Token_Container& token_prod)
-		{
-			std::string output{ "{" };
-			t = token_prod.get_next_token();
-			while ((t.str != "]") && (t.str != "}")) {
-				if ((t.str == "[") || (t.str == "{")) {
-					output.append(get_full_list(t, token_prod));
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(t.str);
-					t = token_prod.get_next_token();
-				}
-			}
-			output.append("}");
-			t = token_prod.get_next_token();
-			return output;
-		}
-
-		//only applicable for the size evaluation!!!
-		//Don't use in other methods, because ++ and -- might be wrong there
-		int get_next_literal(
-			Token &t,
-			Token_Container& token_producer,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map)
-		{
-			int return_value{ 0 };
-			if (t.str == "++") {
-				t = token_producer.get_next_token();
-				if (local_map.find(t.str) != local_map.end()) {
-					return_value = std::stoi(local_map[t.str]);
-				}
-				else if (global_map.find(t.str) != global_map.end()) {
-					return_value = std::stoi(global_map[t.str]);
-				}
-				else {
-					return_value = std::stoi(t.str);
-				}
-				return_value++;
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "--") {
-				t = token_producer.get_next_token();
-				if (local_map.find(t.str) != local_map.end()) {
-					return_value = std::stoi(local_map[t.str]);
-				}
-				else if (global_map.find(t.str) != global_map.end()) {
-					return_value = std::stoi(global_map[t.str]);
-				}
-				else {
-					return_value = std::stoi(t.str);
-				}
-				return_value--;
-				t = token_producer.get_next_token();
-			}
-			else if (local_map.find(t.str) != local_map.end()) {
-				return_value = std::stoi(local_map[t.str]);
-				t = token_producer.get_next_token();
-				if (t.str == "++") {
-					return_value++;
-					t = token_producer.get_next_token();
-				}
-				else if (t.str == "--") {
-					return_value--;
-					t = token_producer.get_next_token();
-				}
-			}
-			else if (global_map.find(t.str) != global_map.end()) {
-				return_value = std::stoi(global_map[t.str]);
-				t = token_producer.get_next_token();
-				if (t.str == "++") {
-					return_value++;
-					t = token_producer.get_next_token();
-				}
-				else if (t.str == "--") {
-					return_value--;
-					t = token_producer.get_next_token();
-				}
-			}
-			else {
-				return_value = std::stoi(t.str);
-				t = token_producer.get_next_token();
-				if (t.str == "++") {
-					return_value++;
-					t = token_producer.get_next_token();
-				}
-				else if (t.str == "--") {
-					return_value--;
-					t = token_producer.get_next_token();
-				}
-			}
-			return return_value;
-		}
-
-		
-		int evaluate_size(
-			Token &t,
-			Token_Container& token_producer,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map,
-			bool rekursive = false);
-
-		int evaluate_plus_minus_followup(
-			Token& t,
-			Token_Container& token_producer,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map)
-		{
-			int return_value{ 0 };
-			if ((t.str == "+") || (t.str == "-")) {
-				t = token_producer.get_next_token();
-				while ((t.str != "+") && (t.str != "-") && (t.str != ")")) {
-					if (t.str == "*") {
-						t = token_producer.get_next_token();
-						if (t.str == "(") {
-							return_value =
-								return_value * evaluate_size(t, token_producer, global_map, local_map, true);
-						}
-						else {
-							return_value =
-								return_value * get_next_literal(t, token_producer, global_map, local_map);
-						}
-					}
-					else if (t.str == "/") {
-						t = token_producer.get_next_token();
-						if (t.str == "(") {
-							return_value =
-								return_value / evaluate_size(t, token_producer, global_map, local_map, true);
-						}
-						else {
-							return_value =
-								return_value / get_next_literal(t, token_producer, global_map, local_map);
-						}
-					}
-					else if (t.str == "") {
-						throw Wrong_Token_Exception{ "Unexpected End of File." };
-					}
-					else {//must a ( or a variable
-						if (t.str == "(") {
-							return_value =
-								evaluate_size(t, token_producer, global_map, local_map, true);
-						}
-						else {
-							return_value =
-								get_next_literal(t, token_producer, global_map, local_map);
-						}
-					}
-				}//end while
-			}//end if
-			return return_value;
-		}
-	}
-		int evaluate_constant_expression(
-			std::string expression,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map)
-		{
-			Tokenizer token_producer{ "(" + expression + ")"}; //place brackets around the expression to reuse evaluate_size
-			Token t = token_producer.get_next_token();
-			return evaluate_size(t, token_producer, global_map, local_map, true);
-		}
-	
-	namespace{
-		int evaluate_size(
-			Token &t,
-			Token_Container& token_producer,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map,
-			bool rekursive)
-		{
-			Token iads = t;
-			if (!rekursive) {
-				if (t.str != "(") {
-					return 32;
-				}
-				t = token_producer.get_next_token();//size
-				t = token_producer.get_next_token();//=
-			}
-			t = token_producer.get_next_token();
-			int return_value{ 0 };
-			while (t.str != ")") {
-				if (t.str == "+") {
-					return_value +=
-						evaluate_plus_minus_followup(t, token_producer, global_map, local_map);
-				}
-				else if (t.str == "-") {
-					return_value -=
-						evaluate_plus_minus_followup(t, token_producer, global_map, local_map);
-				}
-				else if (t.str == "*") {
-					t = token_producer.get_next_token();
-					if (t.str == "(") {
-						return_value =
-							return_value * evaluate_size(t, token_producer, global_map, local_map, true);
-					}
-					else {
-						return_value =
-							return_value * get_next_literal(t, token_producer, global_map, local_map);
-					}
-				}
-				else if (t.str == "/") {
-					t = token_producer.get_next_token();
-					if (t.str == "(") {
-						return_value =
-							return_value / evaluate_size(t, token_producer, global_map, local_map, true);
-					}
-					else {
-						return_value =
-							return_value / get_next_literal(t, token_producer, global_map, local_map);
-					}
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {//must be a ( or a variable
-					if (t.str == "(") {
-						return_value = evaluate_size(t, token_producer, global_map, local_map, true);
-					}
-					else {
-						return_value = get_next_literal(t, token_producer, global_map, local_map);
-					}
-				}
-			}
-			t = token_producer.get_next_token();
-			return return_value;
-		}
-
-		/* try to determine a type as narrow as possible, otherwise long might be a good choice */
-		std::string get_type_of_ranged_for(std::string range) {
-			size_t pos = 1; /* Skip initial { */
-
-			bool negative = false;
-			int res = 0;
-			char* e;
-
-			while (size_t next = range.find_first_of(",", pos) != range.npos) {
-				std::string val = range.substr(pos, next - pos);
-
-				long int x = strtol(val.c_str(), &e, 10);
-				pos = next + 1;
-				if (x < 0) {
-					negative = true;
-				}
-				if (x > SCHAR_MIN && x < SCHAR_MAX) { // 1
-					if (res < 1) {
-						res = 1;
-					}
-				}
-				else if (x > SHRT_MIN && x < SHRT_MAX) { // 2
-					if (res < 2) {
-						res = 2;
-					}
-				}
-				else if (x > INT_MIN && x < INT_MAX) { // 3
-					if (res < 3) {
-						res = 3;
-					}
-				}
-				else if (x > LONG_MIN && x < LONG_MAX) { // 4
-					if (res < 4) {
-						res = 4;
-					}
-				}
-				else {
-					return "long long int";
-				}
-			}
-
-			//cover also the last part
-			std::string val = range.substr(pos, range.size());
-
-			long int x = strtol(val.c_str(), &e, 10);
-			if (x < 0) {
-				negative = true;
-			}
-			if (x > SCHAR_MIN && x < SCHAR_MAX) { // 1
-				if (res < 1) {
-					res = 1;
-				}
-			}
-			else if (x > SHRT_MIN && x < SHRT_MAX) { // 2
-				if (res < 2) {
-					res = 2;
-				}
-			}
-			else if (x > INT_MIN && x < INT_MAX) { // 3
-				if (res < 3) {
-					res = 3;
-				}
-			}
-			else if (x > LONG_MIN && x < LONG_MAX) { // 4
-				if (res < 4) {
-					res = 4;
-				}
-			}
-			else {
-				return "long long int";
-			}
-
-			if (x == 1) {
-				if (negative) {
-					return "signed char";
-				}
-				else {
-					return "unsigned char";
-				}
-			}
-			else if (x == 2) {
-				if (negative) {
-					return "signed short";
-				}
-				else {
-					return "unsigned short";
-				}
-			}
-			else if (x == 3) {
-				if (negative) {
-					return "int";
-				}
-				else {
-					return "unsigned";
-				}
-			}
-			else if (x == 4) {
-				if (negative) {
-					return "signed long";
-				}
-				else {
-					return "unsigned long";
-				}
-			}
-			else {
-				return "long long int";
-			}
-		}
-	
-		std::pair <std::string, std::string> convert_for_head(
-			Token& t,
-			Token_Container& token_prod,
-			std::map<std::string, std::string>& local_map,
-			std::map<std::string, std::string>& symbol_type_map,
-			std::string prefix = "")
-		{
-			Config* c = c->getInstance();
-			std::string head{};
-			std::string tail{};
-			std::string adjusted_prefix{ prefix };
-			while ((t.str != "do") && (t.str != "}") && (t.str != ":")) { // } due to list comprehension 
-				if ((t.str == "for") || (t.str == "foreach")) {
-					t = token_prod.get_next_token();
-					if ((t.str == "uint") || (t.str == "int") || (t.str == "String")
-						|| (t.str == "bool") || (t.str == "half") || (t.str == "float"))
-					{
-						head.append(adjusted_prefix + "for (");
-						std::string type = convert_type(t, token_prod, local_map);
-						head.append(type);
-						head.append(" " + t.str + " = ");
-						std::string var_name{ t.str };
-						local_map[var_name] = "";
-						symbol_type_map[var_name] = type;
-						t = token_prod.get_next_token(); //in
-						t = token_prod.get_next_token(); //start value
-						while (t.str != "..") {
-							if (t.str == "") {
-								throw Wrong_Token_Exception{ "Unexpected End of File." };
-							}
-							head.append(t.str);
-							t = token_prod.get_next_token();
-						}
-						head.append(";");
-						t = token_prod.get_next_token(); //skip .. 
-						head.append(var_name + " <= ");
-						while (t.str != "do" && t.str != "," && t.str != ":" && t.str != "}") {
-							if (t.str == "") {
-								throw Wrong_Token_Exception{ "Unexpected End of File." };
-							}
-							head.append(t.str);
-							t = token_prod.get_next_token();
-						}
-						head.append("; ++" + var_name + ") {\n");
-					}
-					else {//no type, directly variable name, indicates foreach loop
-						std::string vv = t.str;
-						local_map[vv] = "";
-						t = token_prod.get_next_token();//in
-						t = token_prod.get_next_token();
-						std::string r;
-						if ((t.str == "[") || (t.str == "{")) {
-							r.append(get_full_list(t, token_prod));
-						}
-						if (c->get_target_language() == Target_Language::cpp) {
-							head.append(adjusted_prefix + "for (");
-							head.append("auto " + vv);
-							head.append(":");
-							head.append(r);
-							head.append("){\n");
-						}
-						else {
-							std::string range_type = get_type_of_ranged_for(r);
-							std::string unused_var{ find_unused_name(local_map, local_map) };
-							std::string unsed2{ find_unused_name(local_map, local_map) };
-							head.append(adjusted_prefix + range_type + " " + unsed2 + "[] = " + r + ";\n");
-							head.append(adjusted_prefix + "for(unsigned " + unused_var + " = 0;" + unused_var + " < sizeof(" + unsed2 + ") / sizeof(" + unsed2 + "[0]);++" + unused_var + ") { \n");
-							head.append(adjusted_prefix + range_type + " " + vv + " =" + unsed2 + "[" + unused_var + "];\n");
-						}
-					}
-					tail.insert(0, adjusted_prefix + "}\n");
-					if (t.str == ",") {
-						//a komma indicates a further loop head, thus the next token has to be inspected
-						t = token_prod.get_next_token();
-						adjusted_prefix.append("\t");
-					}
-				}
-			}
-			return std::make_pair(head, tail);
-		}
-	}
-
-	namespace {
-		/**
-		Converts the list declaration
-		*/
-		std::string convert_sub_list(
-			Token& t,
-			Token_Container& token_producer,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map,
-			std::string symbol,
-			std::string& type)
-		{
-			std::string output{};
-			if (t.str == "List") {
-				t = token_producer.get_next_token();//(
-				t = token_producer.get_next_token(); //type
-				t = token_producer.get_next_token(); //:
-				t = token_producer.get_next_token(); // type argument
-				if (t.str == "List") {
-					output = convert_sub_list(t, token_producer, global_map, local_map, symbol, type);
-					t = token_producer.get_next_token();//size
-					t = token_producer.get_next_token();//=
-					t = token_producer.get_next_token(); //start of size value
-					size_t insert_point = output.find_first_of("[");
-					std::string insert_string{ "[" };
-					while(t.str != ")"){
-						if (t.str == "(") {
-							insert_string.append(convert_function_call_brakets(t, token_producer));
-						}
-						else if ((global_map.find(t.str) != global_map.end())
-							&& (global_map[t.str] != "") && (global_map[t.str] != "function"))
-						{
-							insert_string.append(global_map[t.str]);
-							t = token_producer.get_next_token();
-						}
-						else if ((local_map.find(t.str) != local_map.end())
-							&& (local_map[t.str] != "") && (local_map[t.str] != "function"))
-						{
-							insert_string.append(local_map[t.str]);
-							t = token_producer.get_next_token();
-						}
-						else if (t.str == "") {
-							throw Wrong_Token_Exception{ "Unexpected End of File." };
-						}
-						else {
-							insert_string.append(t.str);
-							t = token_producer.get_next_token();
-						}
-					}
-					insert_string.append("]");
-					output.insert(insert_point, insert_string);
-					t = token_producer.get_next_token();
-				}
-				else {
-					output = convert_type(t, token_producer, global_map, local_map) + " ";//after the function the token should contain a komma
-					type.append(output);
-					t = token_producer.get_next_token(); //size
-					t = token_producer.get_next_token(); //=
-					t = token_producer.get_next_token(); //start of size value
-					output.append("[" );
-					while (t.str != ")") {
-						if (t.str == "(") {
-							output.append(convert_function_call_brakets(t, token_producer));
-						}
-						else if ((global_map.find(t.str) != global_map.end())
-							&& (global_map[t.str] != "") && (global_map[t.str] != "function"))
-						{
-							output.append(global_map[t.str]);
-							t = token_producer.get_next_token();
-						}
-						else if ((local_map.find(t.str) != local_map.end())
-							&& (local_map[t.str] != "") && (local_map[t.str] != "function"))
-						{
-							output.append(local_map[t.str]);
-							t = token_producer.get_next_token();
-						}
-						else if (t.str == "") {
-							throw Wrong_Token_Exception{ "Unexpected End of File." };
-						}
-						else {
-							output.append(t.str);
-							t = token_producer.get_next_token();
-						}
-					}
-					output.append("]");
-					t = token_producer.get_next_token();
-				}
-			}
-			return output;
-		}
-	}
-
-	std::string convert_inline_if_with_list_assignment(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string prefix,
-		std::string outer_expression)
-	{
-		std::string condition;
-		std::string expression1;
-		std::string expression2;
-		std::string output;
-
-		while (t.str != "?") {
-			if (t.str == "") {
-				throw Wrong_Token_Exception{ "Unexpected End of File." };
-			}
-			condition.append(t.str + " ");
-			t = token_producer.get_next_token();
-		}
-		t = token_producer.get_next_token(); // skip "?"
-		int count{ 1 };
-		bool nested{ false };
-		while (count != 0) {
-			if (t.str == "?") {
-				++count;
-				nested = true;
-				expression1.append(t.str + " ");
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == ":") {
-				--count;
-				expression1.append(t.str + " ");
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "[") {
-				expression1.append(convert_brackets(t, token_producer, true, global_map, local_map).first);
-			}
-			else if (t.str == "") {
-				throw Wrong_Token_Exception{ "Unexpected End of File." };
-			}
-			else {
-				expression1.append(t.str + " ");
-				t = token_producer.get_next_token();
-			}
-		}
-		expression1.erase(expression1.size() - 2, 2);//remove last :
-		if (nested) {
-			expression1 =
-				convert_inline_if_with_list_assignment(expression1, global_map, local_map, symbol_type_map,
-														prefix + "\t", outer_expression);
-		}
-		else {
-			//auf listenzuweiseung prüfen, wenn ja mit convert_list_comprehension in C++ Code umwandeln
-			if ((expression1[0] == '[') || (expression1[0] == '{')) {
-				expression1 =
-					convert_list_comprehension(expression1, outer_expression, global_map,
-												local_map, symbol_type_map, prefix + "\t");
-			}
-			else {
-				expression1 = prefix + "\t" + outer_expression + " = " + expression1 + ";\n";
-			}
-		}
-		//-----------------
-		count= 1;
-		nested=false;
-		while (count != 0) {
-			if (t.str == "?") {
-				++count;
-				nested = true;
-				expression2.append(t.str + " ");
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == ":") {
-				--count;
-				expression2.append(t.str + " ");
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "") {
-				break;
-			}
-			else if (t.str == "[") {
-				expression2.append(convert_brackets(t, token_producer, true, global_map, local_map).first);
-			}
-			else if (t.str == "") {
-				throw Wrong_Token_Exception{ "Unexpected End of File." };
-			}
-			else {
-				expression2.append(t.str + " ");
-				t = token_producer.get_next_token();
-			}
-		}
-		if (nested) {
-			expression2 =
-				convert_inline_if_with_list_assignment(expression2, global_map, local_map, symbol_type_map,
-														prefix + "\t", outer_expression);
-		}
-		else {
-			//auf listenzuweiseung prüfen, wenn ja mit convert_list_comprehension in C++ Code umwandeln
-			if ((expression2[0] == '[') || (expression2[0] == '{')) {
-				expression2 =
-					convert_list_comprehension(expression2, outer_expression, global_map,
-												local_map, symbol_type_map, prefix + "\t");
-			}
-			else {
-				expression2 = prefix + "\t" + outer_expression + " = " + expression2+";\n";
-			}
-		}
-
-		//Build expression
-		output.append(prefix + "if (" + condition + ") {\n");
-		output.append(expression1);
-		output.append(prefix + "}\n");
-		output.append(prefix + "else {\n");
-		output.append(expression2);
-		output.append(prefix + "}\n");
-		return output;
-	}
-
-	std::string convert_inline_if_with_list_assignment(
-		std::string string_to_convert,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string prefix,
-		std::string outer_expression)
-	{
-		Tokenizer tok{ string_to_convert };
-		Token t = tok.get_next_token();
-		return convert_inline_if_with_list_assignment(t, tok, global_map, local_map, symbol_type_map, prefix, outer_expression);
-	}
-
-	std::pair<std::string,bool> convert_inline_if(
-		Token& t,
-		Token_Container& token_producer)
-	{
-		std::string output{};
-		std::string previous_token_string;
-		bool convert_to_if{ false };
-		bool condition_done{ false };
-		if (t.str == "if") {
-			t = token_producer.get_next_token();
-			while ((t.str != "end") && (t.str != "endif")) {
-				if (t.str == "then") {
-					condition_done = true;
-					output.append("?");
-					t = token_producer.get_next_token();
-					previous_token_string = "?";
-				}
-				else if (t.str == "else") {
-					output.append(":");
-					t = token_producer.get_next_token();
-					previous_token_string = ":";
-				}
-				else if (t.str == "if") {
-					auto tmp = convert_inline_if(t, token_producer);
-					output.append(tmp.first);
-					if (tmp.second) {
-						convert_to_if = true;
-					}
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					if ((t.str == "[") || (t.str == "{")) {
-						// ? oder : davor bedeuten, dass es kein array sein kann und
-						// somit ist das eine listenzuweisung, was in C++ nicht funktioniert!
-						if ((previous_token_string == "?") || (previous_token_string == ":")) {
-							convert_to_if = true;
-						}
-					}
-
-					if (t.str == "=") {
-						output.append(" == ");
-					}
-					else {
-						output.append(" " + t.str);
-					}
-					previous_token_string = t.str;
-					t = token_producer.get_next_token();
-				}
-			}
-			t = token_producer.get_next_token();
-		}
-		return std::make_pair(output,convert_to_if);
-	}
-
-	namespace {
-		std::string read_brace(
-			Token& t,
-			Token_Container& token_producer,
-			bool convert_if = true)
-		{
-			std::string output;
-			if (t.str == "{") {
-				output.append(t.str);
-				t = token_producer.get_next_token();
-				while (t.str != "}") {
-					if (t.str == "{") {
-						output.append(read_brace(t, token_producer));
-					}
-					else if (convert_if && t.str == "if") {
-						output.append(convert_inline_if(t, token_producer).first);
-					}
-					else if (t.str == "") {
-						throw Wrong_Token_Exception{ "Unexpected End of File." };
-					}
-					else {
-						output.append(t.str + " ");
-						t = token_producer.get_next_token();
-					}
-				}
-				output.append(t.str);
-				t = token_producer.get_next_token();
-			}
-			return output;
-		}
-
-		std::string convert_list_comprehension(
-			Token& t,
-			Token_Container& token_producer,
-			std::string list_name,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map,
-			std::map<std::string, std::string>& symbol_type_map,
-			std::string prefix = "",
-			std::string outer_expression = "",
-			bool nested = false)
-		{
-			Config* c = c->getInstance();
-			//find whitespaces and remove them, because it doesn't look nice
-			while (list_name.find(" ") != std::string::npos) {
-				list_name = list_name.erase(list_name.find(" "), 1);
-			}
-			t = token_producer.get_next_token(); //drop {
-			std::string index_name{ find_unused_name(global_map, local_map) };
-			std::string output{ prefix + "int " + index_name + "{0};\n" };
-			std::string command{ };
-			bool had_inner_list_comprehension{ false };
-			while (t.str != "}" ) {
-				if (t.str == "{" ) {//nested list comprehension
-					std::string buffer{ read_brace(t,token_producer,false) };
-					Tokenizer tok{ buffer };
-					Token token_tok = tok.get_next_token();
-					std::string expr;
-					if (nested) {
-						expr = outer_expression + "[" + index_name + "]";
-					}
-					else {
-						expr = list_name + "[" + index_name + "]";
-					}
-					command.append(convert_list_comprehension(token_tok, tok, list_name,
-																global_map, local_map, symbol_type_map,
-																prefix+"\t",
-																expr, true));
-					had_inner_list_comprehension = true;
-					//t = token_producer.get_next_Token(); // skip closing }
-				}
-				else {
-					//must be the listcomprehension
-					if (!had_inner_list_comprehension) {
-						if (outer_expression == "") {
-							command.append(prefix + "\t" + list_name + "[" + index_name + "]");
-						}
-						else {
-							command.append(prefix + "\t" + outer_expression + "[" + index_name + "]");
-						}
-					}
-					std::string tmp_command{};
-					while ((t.str != ":") && (t.str != "}")) {
-						if (t.str == "{") {
-							std::string tmp{ read_brace(t,token_producer) };
-							std::replace(tmp.begin(), tmp.end(), '{', '[');
-							std::replace(tmp.begin(), tmp.end(), '}', ']');
-							tmp_command.append(tmp);
-						}
-						else if (t.str == "if") {
-							auto buf = convert_inline_if(t, token_producer);
-							if (buf.second) {
-								//remove prefix because the corresponding prefix will be added later
-								std::string tmp_str{ command };
-								while (tmp_str.find("\t") != std::string::npos) {
-									tmp_str.erase(tmp_str.find("\t"),1);
-								}
-								command =
-									convert_inline_if_with_list_assignment(buf.first, global_map,
-																			local_map, symbol_type_map,
-																			prefix + "\t",
-																			tmp_str);
-								tmp_command = "";
-							}
-							else {
-								tmp_command.append(buf.first);
-							}
-						}
-						else if (t.str == "") {
-							throw Wrong_Token_Exception{ "Unexpected End of File." };
-						}
-						else {
-							tmp_command.append(t.str);
-							t = token_producer.get_next_token();
-						}
-					}
-					if (t.str == ":") {
-						t = token_producer.get_next_token();
-						std::pair<std::string, std::string> head_tail =
-								convert_for_head(t, token_producer, local_map, symbol_type_map, prefix);
-						output.append(head_tail.first);
-						//insert the corresponding number of \t before the command, to get the spacing right
-						std::string tabs;
-						int for_count{ -1 };
-						size_t pos = head_tail.first.find("for");
-						while (pos != std::string::npos) {
-							++for_count;
-							pos = head_tail.first.find("for", pos + 1);
-						}
-						while (for_count > 0) {
-							tabs.append("\t");
-							--for_count;
-						}
-						output.append(tabs);
-						if (tmp_command.empty()) {
-							output.append(command);
-						}
-						else {
-							output.append(command + " = " + tmp_command + ";\n");
-						}
-						output.append(prefix +tabs+ "\t++" + index_name + ";\n");
-						output.append(head_tail.second);
-					}
-					else if (t.str == "}") {
-						if (c->get_target_language() == Target_Language::cpp) {
-							tmp_command.insert(0, "{");
-							tmp_command.append("}");
-							std::string unused_var{ find_unused_name(global_map, local_map) };
-							output.append(prefix + "for( auto " + unused_var + ":" + tmp_command + ") {\n");
-							output.append(command + " = " + unused_var + ";\n");
-							output.append(prefix + "\t++" + index_name + ";\n");
-							output.append(prefix + "}\n");
-						}
-						else {
-							tmp_command.insert(0, "{");
-							tmp_command.append("}");
-							std::string range_type = get_type_of_ranged_for(tmp_command);
-							std::string unused_var{ find_unused_name(global_map, local_map) };
-							std::string unsed2{ find_unused_name(global_map, local_map) };
-							output.append(prefix + range_type + " " + unsed2 + "[] = " + tmp_command + ";\n");
-							output.append(prefix + "for(unsigned " + unused_var + " = 0;" + unused_var + " < sizeof("+ unsed2 +") / sizeof(" + unsed2 + "[0]);++" + unused_var + ") { \n");
-							output.append(command + " ="+ unsed2 + "[" + unused_var + "];\n");
-							output.append(prefix + "\t++" + index_name + ";\n");
-							output.append(prefix + "}\n");
-						}
-					}
-				}
-				if (t.str == ",") {
-					t = token_producer.get_next_token();
-					output.append(prefix + "++" + index_name + ";\n");
-					had_inner_list_comprehension = false;
-				}
-
-			}
-			t = token_producer.get_next_token();
-			return output;
-		}
-
-		std::string convert_list_comprehension(
-			std::string string_to_convert,
-			std::string list_name,
-			std::map<std::string, std::string>& global_map,
-			std::map<std::string, std::string>& local_map,
-			std::map<std::string, std::string>& symbol_type_map,
-			std::string prefix,
-			std::string outer_expression,
-			bool nested)
-		{
-			std::replace(string_to_convert.begin(), string_to_convert.end(), '[', '{');
-			std::replace(string_to_convert.begin(), string_to_convert.end(), ']', '}');
-			Tokenizer token_producer{ string_to_convert };
-			Token t = token_producer.get_next_token();//this must be the start of the list; { - can be dropped
-			return prefix + "{\n" + convert_list_comprehension(t, token_producer, list_name,
-																global_map, local_map, symbol_type_map,
-																prefix + "\t")
-				+ prefix + "}\n";
-		}
-
-	}
-
-	std::pair<std::string, bool> convert_brackets(
-		Token& t,
-		Token_Container& token_producer,
-		bool is_list, //is_list => rvalue 
-		std::map<std::string,std::string>& global_map,
-		std::map<std::string,std::string>& local_map,
-		std::string prefix)
-	{
-		bool list_comprehension{ false };
-		std::string output{};
-		std::string previous_token_string;
-		if ((t.str == "[") || (t.str == "{")) {
-			if (is_list) {
-				output.append("{");
-			}
-			else {
-				output.append("[");
-			}
-			previous_token_string = t.str;
-			t = token_producer.get_next_token();
-			for (;;) {
-				if ((t.str == "[") || (t.str == "{")) {
-					if ((previous_token_string == "[") || (previous_token_string == ",")) {
-						std::pair<std::string, bool> ret_val =
-							convert_brackets(t, token_producer, is_list, global_map, local_map, prefix);
-						output.append(ret_val.first);
-						if (ret_val.second) {
-							list_comprehension = true;
-						}
-					}
-					else {
-						std::pair<std::string, bool> ret_val =
-							convert_brackets(t, token_producer, false, global_map, local_map, prefix);
-						output.append(ret_val.first);
-						if (ret_val.second) {
-							list_comprehension = true;
-						}
-					}
-					previous_token_string = "]";
-				}
-				else if ((t.str == "]") || (t.str == "}")) {
-					if (is_list) {
-						output.append(" }");
-					}
-					else { 
-						output.append(" ]"); 
-					}
-					previous_token_string = t.str;
-					t = token_producer.get_next_token();
-					break;
-				}
-				else if (t.str == ":") {
-					//FOUND LIST COMPREHENSION!!!!!!!!!
-					previous_token_string = t.str;
-					t = token_producer.get_next_token();
-					output.append(":");
-					list_comprehension = true;
-				}
-				else if (t.str == "\"") {
-					output.append(convert_string(t, token_producer));
-					previous_token_string = "\"";
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					if ((global_map.find(t.str) != global_map.end()) && (global_map[t.str] != "")
-						&& (global_map[t.str] != "function"))
-					{
-						output.append(global_map[t.str]);
-					}
-					else if ((local_map.find(t.str) != local_map.end()) && (local_map[t.str] != "")
-						&& (local_map[t.str] != "function"))
-					{
-						output.append(local_map[t.str]);
-					}
-					else {
-						output.append(" "+t.str);
-					}
-					previous_token_string = t.str;
-					t = token_producer.get_next_token();
-				}
-			}
-		}
-		return std::make_pair(output, list_comprehension);
-	}
 
 	std::string convert_function(
-		Token& t, Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& symbol_type_map,
+		AST::Function* function,
 		std::string prefix,
-		std::string symbol)
+		std::map<std::string, std::string> replacements,
+		std::map<std::string, std::string> const_map)
 	{
-		std::map<std::string, std::string> local_map{};
+		std::string ret = prefix;
 		Config* c = c->getInstance();
-		if (t.str == "function") {
-			std::string output{ prefix };
-			t = token_producer.get_next_token();//name
-			std::string symbol_name{ t.str };
-			global_map[t.str] = "function";
-			t = token_producer.get_next_token();//(
-			std::string params;
-			params.append("(");
-			t = token_producer.get_next_token();
-			while (t.str != ")") {
-				if ((t.str == "uint") || (t.str == "int") || (t.str == "String")
-					|| (t.str == "bool") || (t.str == "half") || (t.str == "float"))
-				{
-					params.append(convert_type(t, token_producer, global_map, local_map) + " ");
-					params.append(t.str); // must be the parameter name
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					params.append(t.str);
-				}
-				t = token_producer.get_next_token();
-			}
-			params.append(")");
-			t = token_producer.get_next_token();
-			if (t.str != "-->") {
-				std::cerr << "Error parsing function";
-			}
-			t = token_producer.get_next_token();//must be the return type
-			if (c->get_target_language() == Target_Language::c) {
-				output.append("static ");
-			}
-			output.append(convert_type(t, token_producer, global_map, local_map) + " " + symbol_name + params + "{\n");
-			// HEAD END
-			t = token_producer.get_next_token();
-			while ((t.str != "end") && (t.str != "endfunction")) {
-				if ((t.str == "var") || (t.str == "begin") || (t.str == "do")
-					|| (t.str == ":") || (t.str == ","))
-				{
-					t = token_producer.get_next_token();
-				}
-				else if (t.str == "if") {
-					output.append(convert_if(t, token_producer, global_map, local_map, symbol_type_map, true, prefix + "\t"));
-				}
-				else if ((t.str == "for") || (t.str == "foreach")) {
-					output.append(convert_for(t, token_producer, global_map, local_map, symbol_type_map, true, prefix + "\t"));
-				}
-				else if (t.str == "while") {
-					output.append(convert_while(t, token_producer, global_map, local_map, symbol_type_map, true, prefix + "\t"));
-				}
-				else if ((t.str == "list") || (t.str == "List")) {
-					output.append(convert_list(t, token_producer, global_map, local_map, symbol_type_map, "*", prefix + "\t"));
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(convert_expression(t, token_producer, global_map, local_map, symbol_type_map, "*", true, prefix + "\t"));
-				}
-			}
-			output.append(prefix + "}\n");
-			t = token_producer.get_next_token();
-			if ((symbol_name != symbol) && (symbol != "*")) {
-				return "";//jump out of this procedure if the symbol is not required by the caller
-			}
-			return output;
+		if (c->get_target_language() == Target_Language::c) {
+			ret += "static ";
 		}
-		else {
-			throw Wrong_Token_Exception{ "Expected a function declaration but found:" + t.str };
+		ret += convert_type(&function->ret_type, "", const_map);
+		ret += " " + function->name.name + "(";
+		bool first = true;
+		for (auto p : function->parameters) {
+			if (!first) {
+				ret += ", ";
+			}
+			first = false;
+
+			ret += convert_type(&p->type, "", const_map);
+			ret += " " + p->name.name;
 		}
+
+		ret += ") {\n";
+		ret += prefix + "\treturn ";
+		ret += convert_expression(function->expression, replacements);
+		ret+= ";\n" + prefix + "}\n";
+		return ret;
 	}
 
 	std::string convert_procedure(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& symbol_type_map,
+		AST::Procedure* procedure,
 		std::string prefix,
-		std::string symbol)
+		std::map<std::string, std::string> replacements,
+		std::map<std::string, std::string> const_map)
 	{
-		std::map<std::string, std::string> local_map{};
 		Config* c = c->getInstance();
-		if (t.str == "procedure") {
-			std::string output{ prefix };
-			if (c->get_target_language() == Target_Language::c) {
-				output.append("static ");
-			}
-			output.append("void ");
-			t = token_producer.get_next_token();//name
-			output.append(t.str);
-			std::string symbol_name{ t.str };
-			global_map[t.str] = "function";
-			t = token_producer.get_next_token();//(
-			output.append("(");
-			t = token_producer.get_next_token();
-			while (t.str != ")") {
-				if ((t.str == "uint") || (t.str == "int") || (t.str == "String")
-					|| (t.str == "bool") || (t.str == "half") || (t.str == "float"))
-				{
-					output.append(convert_type(t, token_producer, global_map, local_map)+ " ");
-					output.append(t.str); //must be the parameter name
-					local_map[t.str] = "";
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(t.str);
-				}
-				t = token_producer.get_next_token();
-			}
-			output.append(") {\n");
-			t = token_producer.get_next_token();
-			while ((t.str != "end") && (t.str != "endprocedure")) {
-				if ((t.str == "var") || (t.str == "begin") || (t.str == "do") || (t.str == ":")) {
-					t = token_producer.get_next_token();
-				}
-				else if (t.str == "if") {
-					output.append(convert_if(t, token_producer, global_map, local_map, symbol_type_map, false, prefix + "\t"));
-				}
-				else if ((t.str == "for") || (t.str == "foreach")) {
-					output.append(convert_for(t, token_producer, global_map, local_map, symbol_type_map, false, prefix + "\t"));
-				}
-				else if (t.str == "while") {
-					output.append(convert_while(t, token_producer, global_map, local_map, symbol_type_map, false, prefix + "\t"));
-				}
-				else if ((t.str == "list") || (t.str == "List")) {
-					output.append(convert_list(t, token_producer, global_map, local_map, symbol_type_map, "*", prefix + "\t"));
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else { 
-					output.append(convert_expression(t, token_producer, global_map, local_map, symbol_type_map, "*", false, prefix + "\t")); 
-				}
-			}
-			output.append(prefix + "}\n");
-			t = token_producer.get_next_token();
-			if ((symbol_name != symbol) && (symbol != "*")) {
-				return "";//jump out of this procedure if the symbol is not required by the caller
-			}
-			return output;
+
+		std::string ret = prefix;
+		if (c->get_target_language() == Target_Language::c) {
+			ret += "static ";
 		}
-		else {
-			throw Wrong_Token_Exception{ "Expected a procedure declaration but found:" + t.str };
+		ret += "void ";
+		ret += " " + procedure->name.name + "(";
+		bool first = true;
+		for (auto p : procedure->parameters) {
+			if (!first) {
+				ret += ", ";
+			}
+			first = false;
+
+			ret += convert_type(&p->type, "", const_map);
+			ret += " " + p->name.name;
 		}
+
+		ret += ") {\n";
+
+		for (auto v : procedure->vars) {
+			auto x = convert_vardef(v, prefix + "\t", false, replacements, const_map);
+			ret += x.first;
+			ret += x.second;
+		}
+		for (auto s : procedure->statements) {
+			ret += convert_statement(s, prefix + "\t", replacements, const_map);
+		}
+
+		ret += prefix + "}\n";
+		return ret;
 	}
 
-	std::string convert_if(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		bool return_statement,
+	std::string convert_nativefunction(
+		AST::NativeFunction* native,
 		std::string prefix,
-		bool nested)
+		std::map<std::string, std::string> const_map)
 	{
-		std::string output{};
-		if (t.str == "if") {
-			if (nested) { 
-				output.append("if("); 
-			}
-			else {
-				output.append(prefix + "if(");
-			}
-			t = token_producer.get_next_token(); // skip if
-			while (t.str != "then") {
-				if (t.str == "=") {
-					output.append(" == ");
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(t.str + " ");
-				}
-				t = token_producer.get_next_token();
-			}
-			output.append("){\n");
-			t = token_producer.get_next_token();
-			while ((t.str != "end") && (t.str != "endif")) {
-				if (t.str == "else") {
-					t = token_producer.get_next_token();
-					if (t.str == "if") {
-						output.append(prefix + "} else ");
-						output.append(convert_if(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix, true));
-					}
-					else {
-						output.append(prefix + "} else {\n");
-					}
-				}
-				else if (t.str == "if") {
-					output.append(convert_if(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if ((t.str == "for") || (t.str == "foreach")) {
-					output.append(convert_for(t, token_producer, global_map, local_map, symbol_type_map,  return_statement, prefix + "\t"));
-				}
-				else if (t.str == "while") {
-					output.append(convert_while(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(convert_expression(t, token_producer, global_map, local_map, symbol_type_map, "*", return_statement, prefix + "\t"));
-				}
-			}
-			if (!nested) {
-				output.append(prefix + "}\n");
-			}
-			t = token_producer.get_next_token();
-		}
-		return output;
-	}
-
-
-	std::string convert_for(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		bool return_statement,
-		std::string prefix)
-	{
-		std::string output{};
-		if ((t.str == "for") || (t.str == "foreach")) {
-			std::pair<std::string, std::string> head_tail = convert_for_head(t, token_producer, local_map, symbol_type_map);//t should contain do after this function
-			output.append(prefix + head_tail.first);
-			t = token_producer.get_next_token();
-			while ((t.str != "end") && (t.str != "endfor") && (t.str != "endforeach")) {
-				if (t.str == "if") {
-					output.append(convert_if(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if ((t.str == "for") || (t.str == "foreach")) {
-					output.append(convert_for(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if (t.str == "while") {
-					output.append(convert_while(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(convert_expression(t, token_producer, global_map, local_map, symbol_type_map, "*", return_statement, prefix + "\t"));
-				}
-			}
-			output.append(prefix + head_tail.second);
-			t = token_producer.get_next_token();
-		}
-		return output;
-	}
-
-	std::string convert_while(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		bool return_statement,
-		std::string prefix)
-	{
-		std::string output{};
-		if (t.str == "while") {
-			t = token_producer.get_next_token();
-			output.append(prefix + "while(");
-			while ((t.str != "do") && (t.str != ":")) {
-				if (t.str == "=") {
-					output.append(" == ");
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(t.str);
-				}
-				t = token_producer.get_next_token();
-			}
-			output.append("){\n");
-			t = token_producer.get_next_token();
-			while ((t.str != "end") && (t.str != "endwhile")) {
-				if (t.str == "if") {
-					output.append(convert_if(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if ((t.str == "for") || (t.str == "foreach")) {
-					output.append(convert_for(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if (t.str == "while") {
-					output.append(convert_while(t, token_producer, global_map, local_map, symbol_type_map, return_statement, prefix + "\t"));
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					output.append(convert_expression(t, token_producer, global_map, local_map, symbol_type_map, "*", return_statement, prefix + "\t"));
-				}
-			}
-			output.append(prefix + "}\n");
-			t = token_producer.get_next_token();
-		}
-		return output;
-	}
-	namespace {
-		bool is_const(std::string str, std::map<std::string, std::string>& global_map, std::map<std::string, std::string>& local_map) {
-			//all math operators are const
-			if ((str == "/") || (str == "-") || (str == "+") || (str == "(") || (str == ")")
-				|| (str == "*"))
-			{
-				return true;
-			}
-			//all digits are const
-			bool digit{ true };
-			for (auto it = str.begin(); it != str.end(); ++it) {
-				if ((*it == '0') || (*it == '1') || (*it == '2') || (*it == '3')
-					|| (*it == '4') || (*it == '5') || (*it == '6') || (*it == '7')
-					|| (*it == '8') || (*it == '9'))
-				{
-
-				}
-				else {
-					digit = false;
-				}
-			}
-			if (digit) {
-				return true;
-			}
-			if ((global_map.count(str) > 0) && (global_map[str] != "")
-				&& (global_map[str] != "function"))
-			{
-				return true;
-			}
-			if ((local_map.count(str) > 0) && (local_map[str] != "")
-				&& (local_map[str] != "function"))
-			{
-				return true;
-			}
-			return false;
-		}
-
-	}
-
-	std::string convert_expression(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string prefix)
-	{
-		std::string dummy;
-		return convert_expression(t, token_producer, global_map, global_map, symbol_type_map, dummy, "*", false, prefix);
-	}
-
-	std::string convert_expression(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string& symbol_name,
-		std::string prefix)
-	{
-		return convert_expression(t, token_producer, global_map, global_map, symbol_type_map, symbol_name, "*", false, prefix);
-	}
-
-	std::string convert_expression(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string symbol,
-		bool return_statement,
-		std::string prefix)
-	{
-		std::string dummy;
-		return convert_expression(t, token_producer, global_map, local_map, symbol_type_map, dummy, symbol, return_statement, prefix);
-	}
-
-	std::string convert_expression(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string& symbol_name,
-		std::string symbol,
-		bool return_statement,
-		std::string prefix)
-	{
-		std::string output{};
-		bool type_specified{ false };
-		std::string type;
-		bool println{ false };
-		bool print{ false };
-		if ((t.str == "uint") || (t.str == "int") || (t.str == "String") || (t.str == "bool")
-			|| (t.str == "half") || (t.str == "float"))
-		{
-			type = convert_type(t, token_producer, global_map, local_map);
-			output.append(type + " ");
-			type_specified = true;
-		}
-		else if (t.str == "List") {
-			return convert_list(t, token_producer, global_map, local_map, symbol_type_map, "*", prefix);//parsing for specific symbol isn't startet here, if specific list has to be found the function is started directly via the entry function of this flow
-		}
-		else if (return_statement) {
-			output.append("return ");
-		}
-		symbol_name = t.str;
+		std::string ret = prefix + "extern ";
 		Config* c = c->getInstance();
-		if (type_specified) {
-			local_map[symbol_name] = ""; //insert to check for name collisions
-			symbol_type_map[symbol_name] = type;
+		if (c->get_target_language() == Target_Language::cpp) {
+			ret += "\"C\" ";
 		}
-		if (t.str == "println") {
-			if (c->get_target_language() == Target_Language::cpp) {
-				output.append("std::cout ");
+		ret += convert_type(&native->ret_type, "", const_map);
+		ret += " " + native->name.name + "(";
+		bool first = true;
+		for (auto p : native->parameters) {
+			if (!first) {
+				ret += ", ";
 			}
-			else {
-				output.append("printf");
-			}
-			println = true;
-		}
-		else if (t.str == "print") {
-			if (c->get_target_language() == Target_Language::cpp) {
-				output.append("std::cout ");
-			}
-			else {
-				output.append("printf");
-			}
-			print = true;
-		}
-		else {
-			output.append(t.str);
-		}
-		t = token_producer.get_next_token();
-		while (t.str == "[") {
-			output.append(convert_brackets(t, token_producer, false, global_map, local_map, prefix).first);
-		}
-		if (t.str == ":=") {
-			output.insert(0, prefix);
-			output.append(" = ");
-			t = token_producer.get_next_token();
-			if (t.str == "\"") {
-				output.append(convert_string(t, token_producer) + ";");
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "[") {
-				std::pair<std::string, bool> ret_val =
-					convert_brackets(t, token_producer, true, global_map, local_map, prefix);
-				if (ret_val.second) {
-					//remove = sign
-					output.erase(output.find_last_of("="));
-					if (!type_specified) {// if there is no type, this is not the declaration, thus the part before the equal sign can be skipped
-						while (output.find("\t") != std::string::npos) {
-							output.erase(output.find("\t"), 1);
-						}
-						output = convert_list_comprehension(ret_val.first, output, global_map, local_map, symbol_type_map, prefix);
-					}
-					else {
-						output.append(";\n");
-						output.append(convert_list_comprehension(ret_val.first, symbol_name, global_map, local_map, symbol_type_map, prefix));
-					}
-				}
-				else {
-					if (type_specified) {
-						output.append(ret_val.first + ";\n");
-					}
-					else {
-						output = convert_list_comprehension(ret_val.first, symbol_name, global_map, local_map, symbol_type_map, prefix);
-					}
-				}
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "if") {
-				auto tmp = convert_inline_if(t, token_producer);
-				if (tmp.second) {
-					if (type_specified) {
-						//remove = because no immediate initialization is possible in c++
-						output.erase(output.find(" = "));
-						output.append(";\n");
-					}
-					else {
-						output = "";
-					}
-					//convert the expression to an if statement
-					output.append(convert_inline_if_with_list_assignment(tmp.first, global_map, local_map, symbol_type_map, prefix, symbol_name));
-				}
-				else {
-					output.append(tmp.first);
-					output.append(";\n");
-				}
-			}
-			else {
-				std::string value{};
-				bool only_const_values{ true };
-				while ((t.str != ":") && (t.str != ",") && (t.str != ";") && (t.str != "do")
-					&& (t.str != "begin") && (t.str != "end"))
-				{
-					if (t.str == "=") {//here can be no assignment, so it must be ==
-						value.append(" == ");
-						t = token_producer.get_next_token();
-					}
-					else if (t.str == "if") {
-						value.append(convert_inline_if(t, token_producer).first);
-						only_const_values = false;
-					}
-					else if (t.str == "") {
-						throw Wrong_Token_Exception{ "Unexpected End of File." };
-					}
-					else {
-						value.append(t.str);
-						if (!is_const(t.str, global_map, local_map)) {
-							only_const_values = false;
-							if ((global_map.count(t.str) > 0) && (global_map[t.str] == "function")) {
-								t = token_producer.get_next_token();
-								value.append(convert_function_call_brakets(t, token_producer));
-							}
-							else {
-								t = token_producer.get_next_token();
-							}
-						}
-						else {
-							t = token_producer.get_next_token();
-						}
-					}
+			first = false;
 
-				}
-				if (only_const_values) {
-					int result = evaluate_constant_expression(value, global_map, local_map);
-					output.append(std::to_string(result) + ";\n");
-					local_map[symbol_name] = "";// std::to_string(result); //insert into the map to find it, if it is used to calculate the size of a type!!!
-				}
-				else {
-					output.append(value + ";\n");
-					local_map[symbol_name] = ""; //insert into the map to symbolize that it is defined but not const!
-				}
-			}
+			ret += convert_type(&p->type, "", const_map);
+			ret += " " + p->name.name;
 		}
-		else if (t.str == "=") {
-			if (type_specified) {
-				if (c->get_target_language() == Target_Language::c) {
-					output.insert(0, prefix + "static const ");
-				}
-				else {
-					output.insert(0, prefix + "const ");
-				}
-			}
-			output.append(" = ");
-			t = token_producer.get_next_token();
-			if (t.str == "\"") {
-				output.append(convert_string(t, token_producer) + ";");
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "[") {
-				std::pair<std::string, bool> ret_val = convert_brackets(t, token_producer, true, global_map, local_map, prefix);
-				if (ret_val.second) {
-					//remove const, because a list cannot be filled by a loop if it is const!
-					output.erase(output.find("const "), 6);
-					//remove = sign
-					output.erase(output.find_last_of("="));
-					if (!type_specified) {// if there is no type, this is not the declaration, thus the part before the equal sign can be skipped
-						while (output.find("\t") != std::string::npos) {
-							output.erase(output.find("\t"), 1);
-						}
-						output = convert_list_comprehension(ret_val.first, output, global_map, local_map, symbol_type_map, prefix);
-					}
-					else {
-						output.append(";\n");
-						output.append(convert_list_comprehension(ret_val.first, symbol_name, global_map, local_map, symbol_type_map, prefix));
-					}
-				}
-				else {
-					if (type_specified) {
-						output.append(ret_val.first + ";\n");
-					}
-					else {
-						output =
-							convert_list_comprehension(ret_val.first, symbol_name, global_map, local_map, symbol_type_map, prefix);
-					}
-				}
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "if") {
-				auto tmp = convert_inline_if(t, token_producer);
-				if (tmp.second) {
-					if (type_specified) {
-						//remove const and = because no immediate initialization is possible in c++
-						output.erase(output.find("const"), 6);
-						output.erase(output.find(" = "));
-						output.append(";\n");
-					}
-					else {
-						output = "";
-					}
-					//convert the expression to an if statement
-					output.append(convert_inline_if_with_list_assignment(tmp.first, global_map, local_map, symbol_type_map, prefix, symbol_name));
-				}
-				else {
-					output.append(tmp.first);
-					output.append(";\n");
-				}
-			}
-			else {
-				std::string value{};
-				bool only_const_values{ true };
-				while ((t.str != ":") && (t.str != ",") && (t.str != ";") && (t.str != "do")
-					&& (t.str != "begin") && (t.str != "end"))
-				{
-					if (t.str == "=") {//here can be no assignment, so it must be ==
-						value.append(" == ");
-						t = token_producer.get_next_token();
-					}
-					else if (t.str == "if") {
-						value.append(convert_inline_if(t, token_producer).first);
-						only_const_values = false;
-					}
-					else if (t.str == "") {
-						throw Wrong_Token_Exception{ "Unexpected End of File." };
-					}
-					else {
-						value.append(t.str);
-						if (!is_const(t.str, global_map, local_map)) {
-							only_const_values = false;
-							if ((global_map.count(t.str) > 0) && (global_map[t.str] == "function")) {
-								t = token_producer.get_next_token();
-								value.append(convert_function_call_brakets(t, token_producer));
-							}
-							else {
-								t = token_producer.get_next_token();
-							}
-						}
-						else {
-							t = token_producer.get_next_token();
-						}
-					}
-					
-				}
-				if (only_const_values) {
-					int result = evaluate_constant_expression(value, global_map, local_map);
-					output.append(std::to_string(result) + ";\n");
-					local_map[symbol_name] = std::to_string(result); //insert into the map to find it, if it is used to calculate the size of a type!!!
-				}
-				else {
-					output.append(value + ";\n");
-					local_map[symbol_name] = ""; //insert into the map to symbolize that it is defined but not const!
-				}
-			}
-		}
-		else {//find expressions with an assignment
-			output.insert(0, prefix);
-			bool output_appended{ false };
-			while ((t.str != ":") && (t.str != ";") && (t.str != ",") && (t.str != "end")
-				&& (t.str != "endfunction") && (t.str != "endprocedure") && (t.str != "endaction")
-				&& (t.str != "else") && (t.str != "do") && (t.str != "begin"))
-			{
-				if (t.str == "(") {
-					output.append(convert_function_call_brakets(t, token_producer,println||print));
-					if (println) {
-						if (c->get_target_language() == Target_Language::cpp) {
-							output.append(" << \"\\n\"");
-						}
-						else {
-							output.append(prefix + "printf(\"\\n\");\n");
-						}
-					}
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					if (t.str == "=") {// here is no assignment, thus it must be comparsion
-						output.append(" == ");
-					}
-					else {
-						output.append(t.str);
-					}
-					t = token_producer.get_next_token();
-				}
-			}
-			output.append(";\n");
-		}
-		if ((t.str == ";") || (t.str == ",")) {
-			t = token_producer.get_next_token(); //must drop this token, because ; and , can end one expression, but if it is the last expression in this block, there is no line termination
-		}
-		if ((symbol_name != symbol) && (symbol != "*")) {
-			return ""; //stop is symbol is not requested - but must be inserted into the map before
-		}
-		return output;
+
+		ret += ");\n";
+		return ret;
 	}
 
-	std::string convert_list(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string prefix)
+	std::string convert_nativeprocedure(
+		AST::NativeProcedure* native,
+		std::string prefix,
+		std::map<std::string, std::string> const_map)
 	{
-		return convert_list(t, token_producer, global_map, global_map, symbol_type_map, "*", prefix);
-	}
-
-	std::string convert_list(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string symbol,
-		std::string prefix)
-	{
-		std::string type{};
+		std::string ret = prefix + "extern ";
 		Config* c = c->getInstance();
-		std::string s{ convert_sub_list(t, token_producer, global_map, local_map, symbol, type) };
-		//t should now contain the name of the list
-		s.insert(s.find_first_of("["), t.str);
-		std::string name{ t.str };
-		local_map[name] = ""; // insert to check for name collisions
-		symbol_type_map[name] = type;
-		t = token_producer.get_next_token();
-		if (t.str == ":=") {
-			s.insert(0, prefix);
-			s.append(" = ");
-			t = token_producer.get_next_token();
-			std::pair<std::string, bool> ret_val =
-				convert_brackets(t, token_producer, true, global_map, local_map, prefix);
-			if (ret_val.second == true) {
-				//remove = sign
-				s.erase(s.find_last_of("=")-1);
-				s.append(";");
-				s.append(convert_list_comprehension(ret_val.first, name, global_map, local_map, symbol_type_map, prefix));
-			}
-			else {
-				s.append(ret_val.first + ";\n");
-			}
-			t = token_producer.get_next_token();
+		if (c->get_target_language() == Target_Language::cpp) {
+			ret += "\"C\" ";
 		}
-		else if (t.str == "=") {
-			if (c->get_target_language() == Target_Language::c) {
-				s.insert(0, prefix + "static const ");
+		ret +=" void ";
+		ret += " " + native->name.name + "(";
+		bool first = true;
+		for (auto p : native->parameters) {
+			if (!first) {
+				ret += ", ";
 			}
-			else {
-				s.insert(0, prefix + "const ");
-			}
-			s.append(" = ");
-			t = token_producer.get_next_token();
-			std::pair<std::string, bool> ret_val =
-				convert_brackets(t, token_producer, true, global_map, local_map, prefix);
-			if (ret_val.second == true) {
-				//remove = sign
-				s.erase(s.find("const "), 6);//remove const
-				s.erase(s.find_last_of("=")-1);
-				s.append(";");
-				s.append(convert_list_comprehension(ret_val.first, name, global_map, local_map, symbol_type_map, prefix));
-			}
-			else {
-				s.append(ret_val.first + ";\n");
-			}
-			t = token_producer.get_next_token();
+			first = false;
+
+			ret += convert_type(&p->type, "", const_map);
+			ret += " " + p->name.name;
 		}
-		else {
-			s.append(";\n");
-			s.insert(0, prefix);
-			t = token_producer.get_next_token();
-		}
-		if ((name != symbol) && (symbol != "*")) {//no the requestes symbol -> return empty string
-			return "";
-		}
-		return s;
+
+		ret += ");\n";
+		return ret;
 	}
 
-
-	std::string convert_type(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map)
-	{
-		return convert_type(t, token_producer, global_map, global_map);
-	}
-
-	std::string convert_type(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map)
-	{
-		if (t.str == "int") {
-			t = token_producer.get_next_token();
-			int value = evaluate_size(t, token_producer, global_map, local_map);
-			if (value <= 8) {
-				return "char";
-			}
-			else if (value <= 16) {
-				return "short";
-			}
-			else if (value <= 32) {
-				return "int";
-			}
-			else if (value <= 64) {
-				return "long";
-			}
-			else {
-				return "int";
-			}
-		}
-		else if (t.str == "uint") {
-			t = token_producer.get_next_token();
-			int value = evaluate_size(t, token_producer, global_map, local_map);
-			if (value <= 8) {
-				return "unsigned char";
-			}
-			else if (value <= 16) {
-				return "unsigned short";
-			}
-			else if (value <= 32) {
-				return "unsigned int";
-			}
-			else if (value <= 64) {
-				return "unsigned long";
-			}
-			else {
-				return "unsigned int";
-			}
-		}
-		else if (t.str == "bool") {
-			t = token_producer.get_next_token();
-			if (t.str == "(") {//bool shouldnt consist of a size, but just in case it does the tokens will be dropped
-				while (t.str != ")") {
-					if (t.str == "") {
-						throw Wrong_Token_Exception{ "Unexpected End of File." };
-					}
-					t = token_producer.get_next_token();
-				}
-				t = token_producer.get_next_token();
-			}
-			return "bool";
-		}
-		else if (t.str == "String") {
-			t = token_producer.get_next_token();
-			if (t.str == "(") {//there shouldnt be a size specified, but if it is, drop it
-				while (t.str != ")") {
-					if (t.str == "") {
-						throw Wrong_Token_Exception{ "Unexpected End of File." };
-					}
-					t = token_producer.get_next_token();
-				}
-				t = token_producer.get_next_token();
-			}
-			return "const char*";
-		}
-		else if (t.str == "float") {
-			t = token_producer.get_next_token();
-			int value = evaluate_size(t, token_producer, global_map, local_map);
-			if (value <= 16) {
-				return "half";
-			}
-			else if (value <= 32) {
-				return "float";
-			}
-			else if (value <= 64) {
-				return "double";
-			}
-			else {
-				return "float";
-			}
-		}
-		else if (t.str == "half") {
-			t = token_producer.get_next_token();
-			int value = evaluate_size(t, token_producer, global_map, local_map);
-			if (value <= 16) {
-				return "half";
-			}
-			else if (value <= 32) {
-				return "float";
-			}
-			else if (value <= 64) {
-				return "long";
-			}
-			else {
-				return "half";
-			}
-		}
-		else {
-			throw Wrong_Token_Exception{ "Expected a type specifier, but found:" + t.str };
-		}
-	}
-
-	std::string convert_native_declaration(
-		Token& t,
-		Token_Container& token_producer,
-		std::string symbol,
-		Actor_Conversion_Data& actor_conversion_data,
-		std::map<std::string, std::string>& global_map)
-	{
-		std::string declaration;
-		bool add{ false };
-		bool function{ false };
-		Config* c = c->getInstance();
-
-		if (t.str == "@native") {
-			t = token_producer.get_next_token();
-			if ((t.str != "function") && (t.str != "procedure")) {
-				throw Wrong_Token_Exception{ "Expected function but found " + t.str + "."};
-			}
-			if (t.str == "function") {
-				function = true;
-			}
-			t = token_producer.get_next_token(); //name
-			if ((t.str == symbol) || (symbol == "*")) {
-				global_map[t.str] = "function";
-				actor_conversion_data.add_native_function(t.str);
-				add = true;
-			}
-			declaration.append(t.str);
-			t = token_producer.get_next_token();
-
-			if (t.str != ("(")) {
-				throw Wrong_Token_Exception{ "Expected \"(\" but found " + t.str +"." };
-			}
-			declaration.append(t.str);
-			t = token_producer.get_next_token();
-
-			while (t.str != ")") {
-				if ((t.str == "uint") || (t.str == "int") || (t.str == "String")
-					|| (t.str == "bool") || (t.str == "half") || (t.str == "float"))
-				{
-					declaration.append(convert_type(t, token_producer, global_map, global_map) + " ");
-					declaration.append(t.str); // must be the parameter name
-				}
-				else if (t.str == "") {
-					throw Wrong_Token_Exception{ "Unexpected End of File." };
-				}
-				else {
-					//This shouldn't happen
-					std::cout << "Native function conversion failed at token " << t.str << std::endl;
-					exit(5);
-				}
-				t = token_producer.get_next_token();
-			}
-			declaration.append(")");
-			t = token_producer.get_next_token();
-			if (function) {
-				if (t.str != "-->") {
-					throw Wrong_Token_Exception{ " Expected \"-->\" during native function declaration conversion but found \"" + t.str + "\"." };
-				}
-				t = token_producer.get_next_token();
-				// must be the type
-				std::string return_type = convert_type(t, token_producer, global_map, global_map);
-				if (c->get_target_language() == Target_Language::c) {
-					declaration = "extern " + return_type + " " + declaration;
-				}
-				else {
-					declaration = "extern \"C\" " + return_type + " " + declaration;
-				}
-			}
-			else {
-				if (c->get_target_language() == Target_Language::c) {
-					declaration = "extern void " + declaration;
-				}
-				else {
-					declaration = "extern \"C\" void " + declaration;
-				}
-			}
-			if (function) {
-				if ((t.str != "end") && (t.str != "endfunction")) {
-					throw Wrong_Token_Exception{ "Expected function end but found " + t.str };
-				}
-			}
-			else {
-				if ((t.str != "end") && (t.str != "endprocedure")) {
-					throw Wrong_Token_Exception{ "Expected procedure end but found " + t.str };
-				}
-			}
-			t = token_producer.get_next_token();
-		}
-		else {
-			throw Wrong_Token_Exception{ "Expected a native declaration but found:" + t.str };
-		}
-
-
-		if (add) {
-			return declaration + ";\n";
-		}
-		else {
-			return std::string();
-		}
-	}
-
-	std::string convert_native_declaration(
-		Token& t,
-		Token_Container& token_producer,
-		std::string symbol,
-		Actor_Conversion_Data& actor_conversion_data)
-	{
-		std::map<std::string, std::string> tmp_map;
-		return convert_native_declaration(t, token_producer, symbol, actor_conversion_data, tmp_map);
-	}
-
-	std::string convert_scope(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& local_map,
-		std::map<std::string, std::string>& symbol_type_map,
-		std::string prefix = "")
-	{
-		std::string output{ prefix + "{\n" };
-		std::map<std::string, std::string> scope_local_map{ local_map };
-		std::map<std::string, std::string> scope_local_type_map{ symbol_type_map };
-		t = token_producer.get_next_token(); //skip begin
-		while (t.str != "end") {
-			if ((t.str == "var") || (t.str == "do")) {
-				t = token_producer.get_next_token();
-			}
-			else if (t.str == "begin") {
-				output.append(convert_scope(t, token_producer, global_map, scope_local_map, scope_local_type_map, prefix + "\t"));
-			}
-			else if ((t.str == "for") || (t.str == "foreach")) {
-				output.append(convert_for(t, token_producer, global_map, scope_local_map, scope_local_type_map, false, prefix + "\t"));
-			}
-			else if (t.str == "while") {
-				output.append(convert_while(t, token_producer, global_map, scope_local_map, scope_local_type_map, false, prefix + "\t"));
-			}
-			else if (t.str == "") {
-				throw Wrong_Token_Exception{ "Unexpected End of File." };
-			}
-			else {
-				output.append(convert_expression(t, token_producer, global_map, scope_local_map, scope_local_type_map, "*", false, prefix + "\t"));
-			}
-		}
-		output.append(prefix + "}\n");
-		t = token_producer.get_next_token(); //skip end
-		return output;
-	}
-
-	std::string convert_actor_parameters(
-		Token& t,
-		Token_Container& token_producer,
-		std::map<std::string, std::string>& global_map,
-		std::map<std::string, std::string>& name_type_map,
-		std::map<std::string, std::string>& default_value_map,
-		std::string prefix)
+	static std::string baseexpr_conversion(
+		AST::BaseExpression* base,
+		std::map<std::string, std::string> replacements)
 	{
 		std::string result;
-
-		if (t.str != "(") {
-			throw Wrong_Token_Exception{ "Expected \'(\' but found " + t.str };
+		Config* c = c->getInstance();
+		if (dynamic_cast<AST::Literal*>(base) != nullptr) {
+			auto l = dynamic_cast<AST::Literal*>(base);
+			if (l->negation) {
+				result = "-";
+			}
+			result.append(l->literal);
 		}
-
-		t = token_producer.get_next_token();
-		//t must be a type now and we can start parsing
-		while (t.str != ")") {
-			std::string type;
-			std::string name;
-			std::string default_value;
-
-			type = convert_type(t, token_producer, global_map);
-			name = t.str;
-			t = token_producer.get_next_token();
-			if (t.str == "=") {
-				// default value given
-				t = token_producer.get_next_token();
-				while ((t.str != ")") && (t.str != ",")) {
-					if (global_map.contains(t.str)) {
-						default_value.append(global_map[t.str]);
+		else if (dynamic_cast<AST::Identifier*>(base) != nullptr) {
+			auto i = dynamic_cast<AST::Identifier*>(base);
+			if (i->unary_left != nullptr) {
+				result = i->unary_left->ops;
+			}
+			if (replacements.contains(i->identifier)) {
+				result += replacements[i->identifier];
+			}
+			else {
+				result += i->identifier;
+			}
+			if (i->unary_right != nullptr) {
+				result += i->unary_right->ops;
+			}
+			for (auto x : i->indices){
+				result += "[" + convert_expression(x->index, replacements) + "]";
+			}
+			if (i->call != nullptr) {
+				result += "(";
+				for (auto it = i->call->parameters.begin(); it != i->call->parameters.end(); ++it) {
+					if (it != i->call->parameters.begin()) {
+						result += ", ";
 					}
-					else {
-						default_value.append(t.str);
-					}
-					t = token_producer.get_next_token();
+					result += convert_expression(*it, replacements);
+				}
+				result += ")";
+			}
+		}
+		else if (dynamic_cast<AST::TernaryOperator*>(base) != nullptr) {
+			auto t = dynamic_cast<AST::TernaryOperator*>(base);
+			result = convert_expression(t->cond, replacements);
+			result += " ? ";
+			result += convert_expression(t->ifblock, replacements);
+			result += " : ";
+			result += convert_expression(t->elseblock, replacements);
+		}
+		else if (dynamic_cast<AST::Operator*>(base) != nullptr) {
+			auto o = dynamic_cast<AST::Operator*>(base);
+			std::string ops = o->ops;
+			if (ops == "=") {
+				ops = "==";
+			}
+			result = baseexpr_conversion(o->left, replacements) + " " + ops + " " + baseexpr_conversion(o->right, replacements);
+		}
+		else if (dynamic_cast<AST::Expression*>(base) != nullptr) {
+			auto e = dynamic_cast<AST::Expression*>(base);
+			if (e->brakets) {
+				result = "(";
+			}
+			result += baseexpr_conversion(e->child, replacements);
+			if (e->brakets) {
+				result += ")";
+			}
+		}
+		else if (dynamic_cast<AST::PortPreview*>(base) != nullptr) {
+			auto p = dynamic_cast<AST::PortPreview*>(base);
+			ABI_CHANNEL_PREFETCH(c, result, p->port, baseexpr_conversion(p->index->index, replacements))
+		}
+		else if (dynamic_cast<AST::PortSize*>(base) != nullptr) {
+			auto p = dynamic_cast<AST::PortSize*>(base);
+			ABI_CHANNEL_SIZE(c, result, p->port)
+		}
+		else if (dynamic_cast<AST::PortFree*>(base) != nullptr) {
+			auto p = dynamic_cast<AST::PortFree*>(base);
+			ABI_CHANNEL_FREE(c, result, p->port)
+		}
+		else if (dynamic_cast<AST::FSM_Enumeration_Element*>(base) != nullptr) {
+			auto e = dynamic_cast<AST::FSM_Enumeration_Element*>(base);
+			if (c->get_target_language() == Target_Language::cpp) {
+				result = e->enum_name + "::" + e->enum_element;
+			}
+			else {
+				result = e->enum_element;
+			}
+		}
+		return result;
+	}
+
+	std::string convert_expression(
+		AST::Expression* expression,
+		std::map<std::string, std::string> replacements)
+	{
+		return baseexpr_conversion(expression, replacements);
+	}
+
+	static std::string convert_generator(
+		AST::Generator* gen,
+		std::map<std::string, std::string> replacements,
+		std::string prefix,
+		std::map<std::string, std::string> const_map)
+	{
+		std::string result = prefix + "for (";
+		if (gen->type != nullptr) {
+			result.append(convert_type(gen->type, gen->identifier.name, const_map));
+		}
+		else {
+			result.append(gen->identifier.name);
+		}
+		result.append(" = " + convert_expression(gen->start, replacements) + "; "
+			+ gen->identifier.name + " <= " + convert_expression(gen->end, replacements) + ";");
+		result.append(gen->identifier.name + "++) {\n");
+		return result;
+	}
+
+	std::string convert_statement(
+		AST::Statement* stmt,
+		std::string prefix,
+		std::map<std::string, std::string> replacements,
+		std::map<std::string, std::string> const_map)
+	{
+		std::string result;
+		Config* c = c->getInstance();
+		if (dynamic_cast<AST::ForeachStatement*>(stmt) != nullptr) {
+			auto f = dynamic_cast<AST::ForeachStatement*>(stmt);
+			for (auto g : f->generators) {
+				result.append(convert_generator(g, replacements, prefix, const_map));
+			}
+			for (auto v : f->vars) {
+				auto tmp = convert_vardef(v, prefix + "\t", false, replacements, const_map);
+				result.append(tmp.first + tmp.second);
+			}
+			for (auto s : f->statements) {
+				result.append(convert_statement(s, prefix + "\t", replacements, const_map));
+			}
+			for (auto g : f->generators) {
+				result.append(prefix + "}\n");
+			}
+		}
+		else if (dynamic_cast<AST::WhileStatement*>(stmt) != nullptr) {
+			auto w = dynamic_cast<AST::WhileStatement*>(stmt);
+			result.append(prefix + "while (" + convert_expression(w->condition, replacements) + ") {\n");
+			for (auto v : w->vars) {
+				auto tmp = convert_vardef(v, prefix + "\t", false, replacements, const_map);
+				result.append(tmp.first + tmp.second);
+			}
+			for (auto s : w->statements) {
+				result.append(convert_statement(s, prefix + "\t", replacements, const_map));
+			}
+			result.append(prefix + "}\n");
+		}
+		else if (dynamic_cast<AST::AssignmentStatement*>(stmt) != nullptr) {
+			auto a = dynamic_cast<AST::AssignmentStatement*>(stmt);
+			result = prefix + a->identifier.name;
+			for (auto x : a->indices) {
+				result.append("[" + convert_expression(x->index, replacements) + "]");
+			}
+
+			if (dynamic_cast<AST::ListComprehension*>(a->asgnvalue) != nullptr) {
+				auto tmp = convert_listcomprehension(dynamic_cast<AST::ListComprehension*>(a->asgnvalue),
+					prefix, a->identifier.name, replacements, const_map);
+				if (tmp.first.empty()) {
+					result.append(";\n" + tmp.second);
+				}
+				else {
+					result.append(" = " + tmp.first + ";\n");
 				}
 			}
-			if (t.str == ",") {
-				t = token_producer.get_next_token();
+			else {
+				result.append(" = " + convert_expression(a->asgnvalue, replacements) + ";\n");
 			}
-			global_map[name] = default_value;
-			if (!default_value.empty()) {
-				default_value_map[name] = default_value;
-			}
-			name_type_map[name] = type;
-			result.append(prefix + type + " " + name + ";\n");
+
 		}
-		t = token_producer.get_next_token();
+		else if (dynamic_cast<AST::BlockStatement*>(stmt) != nullptr) {
+			auto b = dynamic_cast<AST::BlockStatement*>(stmt);
+			result.append(prefix + "{\n");
+			for (auto v : b->vars) {
+				auto tmp = convert_vardef(v, prefix + "\t", false, replacements, const_map);
+				result.append(tmp.first + tmp.second);
+			}
+			for (auto s : b->statements) {
+				result.append(convert_statement(s, prefix + "\t", replacements, const_map));
+			}
+			result.append(prefix + "}\n");
+		}
+		else if (dynamic_cast<AST::CallStatement*>(stmt) != nullptr) {
+			auto c = dynamic_cast<AST::CallStatement*>(stmt);
+			result = prefix + c->name.name + "(";
+			bool first = true;
+			for (auto p : c->parameters) {
+				if (!first) {
+					result += ", ";
+				}
+				first = false;
+				result += convert_expression(p, replacements);
+			}
+			result += ");\n";
+		}
+		else if (dynamic_cast<AST::IfStatement*>(stmt) != nullptr) {
+			auto i = dynamic_cast<AST::IfStatement*>(stmt);
+			result = prefix + "if (" + convert_expression(i->condition, replacements) + ") {\n";
+			for (auto s : i->ifblock) {
+				result += convert_statement(s, prefix + "\t", replacements, const_map);
+			}
+			if (i->elseblock != nullptr) {
+				result += prefix + "} else {\n";
+				for (auto s : i->elseblock->statements) {
+					result += convert_statement(s, prefix + "\t", replacements, const_map);
+				}
+			}
+			result += prefix + "}\n";
+		}
+		else if (dynamic_cast<AST::OutputChannelWriteStatement*>(stmt) != nullptr) {
+			auto o = dynamic_cast<AST::OutputChannelWriteStatement*>(stmt);
+			std::string tmp;
+			ABI_CHANNEL_WRITE(c, tmp, baseexpr_conversion(o->expr, replacements), o->port.name);
+			result.append(prefix + tmp + ";\n");
+		}
+		else if (dynamic_cast<AST::InputChannelReadStatement*>(stmt) != nullptr) {
+			auto i = dynamic_cast<AST::InputChannelReadStatement*>(stmt);
+			std::string tmp;
+			ABI_CHANNEL_READ(c, tmp, i->port.name);
+			result.append(prefix + i->identifier.name);
+			if (i->index != nullptr) {
+				result.append("[" + baseexpr_conversion(i->index->index, replacements) + "]");
+			}
+			result.append(" = " + tmp + ";\n");
+		}
+		else if (dynamic_cast<AST::ReturnStatement*>(stmt) != nullptr) {
+			result += prefix + "return;\n";
+		}
+		else if (dynamic_cast<AST::TerminateLoopStatement*>(stmt) != nullptr) {
+			result += prefix + "break;\n";
+		}
 		return result;
+	}
+
+	std::string convert_type(
+		AST::Type* type,
+		std::string name,
+		std::map<std::string, std::string> const_map)
+	{
+		if (type->non_standard_type) {
+			return type->type.name + " " + name;
+		}
+		std::string ret;
+		int value = 5555; /* larger than any check to go to default */
+		if (type->size != nullptr) {
+			value = Conversion_Helper::evaluate_constant_expression(type->size, const_map);
+		}
+		if (type->type.name == "list") {
+			std::string ltype = convert_type(type->listtype, name, const_map);
+			std::string sz = "[" + std::to_string(value) + "]";
+			if (ltype.find_first_of("[") == std::string::npos) {
+				return ltype + sz;
+			}
+			else {
+				ltype.insert(ltype.find_first_of("["), sz);
+				return ltype;
+			}
+		}
+		else if (type->type.name == "uint") {
+			if (value <= 8) {
+				ret = "unsigned char";
+			}
+			else if (value <= 16) {
+				ret = "unsigned short";
+			}
+			else if (value <= 32) {
+				ret = "unsigned int";
+			}
+			else if (value <= 64) {
+				ret = "unsigned long";
+			}
+			else {
+				ret = "unsigned int";
+			}
+		}
+		else if (type->type.name == "int") {
+			if (value <= 8) {
+				ret = "char";
+			}
+			else if (value <= 16) {
+				ret = "short";
+			}
+			else if (value <= 32) {
+				ret = "int";
+			}
+			else if (value <= 64) {
+				ret = "long";
+			}
+			else {
+				ret = "int";
+			}
+		}
+		else if (type->type.name == "bool") {
+			ret = "bool";
+		}
+		else if (type->type.name == "half") {
+			if (value <= 16) {
+				ret = "half";
+			}
+			else if (value <= 32) {
+				ret = "float";
+			}
+			else if (value <= 64) {
+				ret = "double";
+			}
+			else {
+				ret = "half";
+			}
+		}
+		else if (type->type.name == "float") {
+			if (value <= 16) {
+				ret = "half";
+			}
+			else if (value <= 32) {
+				ret = "float";
+			}
+			else if (value <= 64) {
+				ret = "double";
+			}
+			else {
+				ret = "float";
+			}
+		}
+		else if (type->type.name == "string") {
+			ret = "const char*";
+		}
+
+		return ret + " " + name;
+	}
+
+	std::pair<std::string, std::string> convert_vardef(
+		AST::VarDefinition* vardef,
+		std::string prefix,
+		bool noinit,
+		std::map<std::string, std::string> replacements,
+		std::map<std::string, std::string> const_map)
+	{
+		std::string ret = prefix;
+		std::string init;
+		Config* c = c->getInstance();
+		/* this is a list comprehension. */
+		std::pair<std::string, std::string> listcomp_init;
+		if ((vardef->assign != nullptr) && (dynamic_cast<AST::ListComprehension*>(vardef->assign->child) != nullptr)) {
+			/* C cannot initialize variables in arrays like needed for the code generated here, hence, place it in init */
+			listcomp_init = convert_listcomprehension(dynamic_cast<AST::ListComprehension*>(vardef->assign->child),
+				prefix, vardef->name.name, replacements, const_map, vardef->constassign);
+		}
+
+		if (vardef->constassign && listcomp_init.second.empty()) {
+			/* Noinit should only be true for actor variables in C code generation
+			 * but not for variables elsewhere where no static is required
+			 */
+			if (noinit) {
+				ret += "static ";
+			}
+			ret += "const ";
+		}
+		ret += convert_type(&vardef->type, vardef->name.name, const_map);
+		for (auto x: vardef->arrays) {
+			ret += "[" + std::to_string(Conversion_Helper::evaluate_constant_expression(x, const_map)) + "]";
+		}
+		if (vardef->assign != nullptr) {
+			if (dynamic_cast<AST::ListComprehension*>(vardef->assign->child) == nullptr) {
+				if (noinit && !vardef->constassign) {
+					init = prefix + vardef->name.name + " = " + convert_expression(vardef->assign, replacements) + ";\n";
+				}
+				else {
+					ret += " = " + convert_expression(vardef->assign, replacements);
+				}
+			}
+			else {
+				if (listcomp_init.first.empty()) {
+					/* must be init code. */
+					init = listcomp_init.second;
+				}
+				else {
+					ret += " = " + listcomp_init.first;
+				}
+			}
+		}
+		return std::make_pair(ret + ";\n", init);
+	}
+
+	std::pair<std::string, std::string> convert_actorparam(
+		AST::ActorParameter* param,
+		std::string prefix,
+		std::map<std::string, std::string> const_map)
+	{
+		std::string p = convert_type(&param->type, param->name.name, const_map);
+		std::string i;
+		if (param->asign != nullptr) {
+			convert_expression(param->asign, std::map<std::string, std::string>());
+		}
+		return std::make_pair(p+";\n", i);
+	}
+
+	std::pair<std::string, std::string> convert_listcomprehension(
+		AST::ListComprehension* outexpr,
+		std::string prefix,
+		std::string assign_var,
+		std::map<std::string, std::string> replacements,
+		std::map<std::string, std::string> const_map,
+		bool constasgn)
+	{
+		Config* c = c->getInstance();
+		bool contains_generator = !outexpr->generators.empty();
+		bool contains_lstcomp = false;
+		for (auto e = outexpr->expressions.begin(); e != outexpr->expressions.end(); ++e) {
+			if (dynamic_cast<AST::ListComprehension*>((*e)->child) != nullptr) {
+				contains_lstcomp = true;
+			}
+		}
+
+		if (!contains_lstcomp && !contains_generator && (constasgn || (c->get_target_language() == Target_Language::cpp))) {
+			/* This is only a plain list we can initialize directly if not C because struct members cannot be initialized like this */
+			std::string result = "{";
+			bool first = true;
+			for (auto x : outexpr->expressions) {
+				if (!first) {
+					result += ", ";
+				}
+				first = false;
+				result += convert_expression(x, replacements);
+			}
+			result += "}";
+
+			return std::make_pair(result, "");
+		}
+
+#if 0
+		/* This is only true for constructors but not for other functions, hence, omit it for now. It is only code beautification ... */
+		if (c->get_target_language() == Target_Language::cpp) {
+			/* construction also has indent for class */
+			prefix += "\t";
+		}
+#endif
+		if (c->get_target_language() == Target_Language::c && !constasgn) {
+			/* Next step will generate init code, hence, the variable will later be stored inside the struct */
+			assign_var = "_g->" + assign_var;
+		}
+
+		std::string result = prefix + "{\n";
+		std::string iterator_var = unused_identifier();
+		result += prefix + "\t" + "unsigned " + iterator_var + " = 0;\n";
+		std::string generators;
+		for (auto g : outexpr->generators) {
+			generators.append(convert_generator(g, replacements, prefix + "\t", const_map));
+		}
+
+		result += generators;
+		if (contains_lstcomp) {
+			for (auto e : outexpr->expressions) {
+				if (dynamic_cast<AST::ListComprehension*>(e->child) != nullptr) {
+					result += convert_listcomprehension(dynamic_cast<AST::ListComprehension*>(e->child), prefix + "\t",
+						assign_var + "[" + iterator_var + "]", replacements, const_map, true).second;
+					/* The noinit = true makes the first part empty, hence, adding only second is sufficient. */
+				}
+				else {
+					result += prefix + "\t" + assign_var + "[" + iterator_var + "] = " + convert_expression(e, replacements) + ";\n";
+				}
+				result.append(prefix + "\t" + "++" + iterator_var + ";\n");
+			}
+		}
+		else {
+			for (auto e : outexpr->expressions) {
+				result += prefix + "\t" + assign_var + "[" + iterator_var + "++] = " + convert_expression(e, replacements) + ";\n";
+			}
+
+		}
+		for (unsigned i = 0; i < outexpr->generators.size(); ++i) {
+			result.append(prefix + "\t}\n");
+		}
+		result += prefix + "}\n";
+		return std::make_pair("", result);
+	}
+
+	std::string unused_identifier(void)
+	{
+		static unsigned counter = 1;
+
+		return "_" + std::to_string(counter++);
 	}
 }

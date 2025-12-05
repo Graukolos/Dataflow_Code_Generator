@@ -2,7 +2,10 @@
 #include <memory>
 #include <sstream>
 #include <filesystem>
+#include <chrono>
+
 #include "Config/config.h"
+#include "Config/debug.h"
 #include "IR/Dataflow_Network.hpp"
 #include "Reader/Reader.hpp"
 #include "Dataflow_Analysis/Actor_Classification/Actor_Classification.hpp"
@@ -14,6 +17,7 @@
 using namespace std;
 
 Config* Config::instance = 0;
+static bool silent = false;
 
 static void parse_command_line_input(int argc, char* argv[]) {
 	Config* c = c->getInstance();
@@ -62,8 +66,11 @@ static void parse_command_line_input(int argc, char* argv[]) {
 				"\nOptimizations:\n"
 				"	--prune_unconnected Remove unconnected channels from actors, otherwise they are set to NULL.\n"
 				"   --opt_sched         Use optimized local scheduling.\n"
+				"   --opt_cmerge        Merge adjacent actor instances on the same core.\n"
+				"   --no-pe             Omit prolog and epilog split in actor merge.\n"
 				"\nVerbosity:\n"
-				"   --verbose=(all, reader, ir, classify, opt1, opt2, map, code-gen)";
+				"   --verbose=(all, reader, ir, classify, opt1, opt2, map, code-gen).\n"
+				"   --silent            No output at all except runtime.\n";
 			exit(0);
 		}
 		else if (strcmp(argv[i], "-w") == 0) {
@@ -216,6 +223,12 @@ static void parse_command_line_input(int argc, char* argv[]) {
 		else if (strcmp(argv[i], "--opt_sched") == 0) {
 			c->set_optimize_scheduling();
 		}
+		else if (strcmp(argv[i], "--no-pe") == 0) {
+			c->clear_prolog_epilog_opt();
+		}
+		else if (strcmp(argv[i], "--opt_cmerge") == 0) {
+			c->set_optimize_core_merge();
+			}
 		else if (strncmp(argv[i], "--verbose=", 10) == 0) {
 			std::string lvl{argv[i] + 10};
 			if (lvl == "all") {
@@ -248,6 +261,9 @@ static void parse_command_line_input(int argc, char* argv[]) {
 				c->set_verbose_read();
 			}
 		}
+		else if (strcmp(argv[i], "--silent") == 0) {
+			silent = true;
+		}
 		else {
 			std::cout << "Error:Unknown input " << argv[i] << std::endl;
 			exit(1);
@@ -271,15 +287,21 @@ static void parse_command_line_input(int argc, char* argv[]) {
 		exit(1);
 	}
 	if (c->get_cores() == 0) {
-		std::cout << "Number of cores to use not set; Assuming four." << std::endl;
+		if (!silent) {
+			std::cout << "Number of cores to use not set; Assuming four." << std::endl;
+		}
 		c->set_cores(4);
 	}
 	if (!mapping_set) {
-		std::cout << "Using mapping strategy all to all (default)." << std::endl;
+		if (!silent) {
+			std::cout << "Using mapping strategy all to all (default)." << std::endl;
+		}
 		c->set_mapping_strategy_all_to_all();
 	}
 	if (!schedule_set) {
-		std::cout << "Using non-preemptive scheduling (default)." << std::endl;
+		if (!silent) {
+			std::cout << "Using non-preemptive scheduling (default)." << std::endl;
+		}
 		c->set_sched_non_preemptive();
 	}
 	if ((c->get_target_ABI() == Target_ABI::stdc) && (c->get_cores() != 1)) {
@@ -290,13 +312,67 @@ static void parse_command_line_input(int argc, char* argv[]) {
 
 
 int main(int argc, char* argv[]) {
+	Config* c = c->getInstance();
 
+#if 0
 	parse_command_line_input(argc, argv);
 
-	Config *c = c->getInstance();
+#else
+	c->set_optimize_core_merge();
+	c->set_orcc_compat();
+	c->set_cores(1);
+	c->set_FIFO_size(512);
+	c->set_cmake();
+	c->set_sched_non_preemptive();
+	c->set_verbose_ir_gen();
+	//c->clear_prolog_epilog_opt();
 
-	/* Create target directory if it doesn't exist. */
-	std::filesystem::create_directory(c->get_target_dir());
+#if 0
+	c->set_source_dir("C:\\Users\\Florian\\Downloads\\orc-apps-master\\ZigBee\\src");
+	c->set_target_dir("C:\\Users\\Florian\\Desktop\\y");
+	c->set_network_file("C:\\Users\\Florian\\Downloads\\orc-apps-master\\ZigBee\\src\\multitoken_tx\\Top_ZigBee_tx.xdf");
+#endif
+
+#if 0
+	// cannot print AST or generate composite code, seems to be stuck in some loop
+	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Predistortion\\src");
+	c->set_target_dir("C:\\Users\\Florian\\Desktop\\z");
+	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Predistortion\\src\\lowlevel_dpd\\Top_DPD.xdf");
+#endif
+
+#if 0
+	//cannot do get_do_code
+	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\DigitalFilters\\src");
+	c->set_target_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Code\\LMS_mod");
+	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\DigitalFilters\\src\\LMS\\LMS_lowlevel.xdf");
+#endif
+
+#if 0
+	//untested
+	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\FFT");
+	c->set_target_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Code\\FFT_mod");
+	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\DigitalFilters\\src\\LMS\\LMS_lowlevel.xdf");
+#endif
+
+#if 0
+	//stuck somewhere in optimization
+	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Random\\250");
+	c->set_target_dir("C:\\Users\\Florian\\Desktop\\y");
+	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Random\\250\\xdf\\gen.xdf");
+#endif
+
+#if 1
+	c->set_source_dir("C:\\Users\\Florian\\Desktop\\Random_Merge");
+	c->set_target_dir("C:\\Users\\Florian\\Desktop\\y");
+	c->set_network_file("C:\\Users\\Florian\\Desktop\\Random_Merge\\xdf\\gen.xdf");
+#endif
+
+
+#endif
+
+	if (silent) {
+		std::cout.setstate(std::ios_base::failbit);
+	}
 
 	std::cout << "Network File: " << c->get_network_file() << std::endl;
 	std::cout << "CAL Source directory: " << c->get_source_dir() << std::endl;
@@ -369,6 +445,11 @@ int main(int argc, char* argv[]) {
 		exit(92);
 	}
 
+	const auto start{ std::chrono::steady_clock::now() };
+
+	/* Create target directory if it doesn't exist. */
+	std::filesystem::create_directory(c->get_target_dir());
+
 	IR::Dataflow_Network* dpn;
 
 	try {
@@ -419,6 +500,8 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Actor Classification done." << std::endl;
 
+	const auto opt_start{ std::chrono::steady_clock::now() };
+
 	Optimization::Optimization_Data_Phase1* opt_data1;
 	try {
 		opt_data1 = Optimization::optimize_phase1(dpn);
@@ -450,6 +533,19 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 
+	const auto opt_end{ std::chrono::steady_clock::now() };
+	const std::chrono::duration<double> opt_elapsed{ opt_end - opt_start };
+
+	if (silent) {
+		std::cout.clear();
+	}
+
+	std::cout << "Optimization took: " << opt_elapsed << std::endl;
+
+	if (silent) {
+		std::cout.setstate(std::ios_base::failbit);
+	}
+
 	std::cout << "Phase 2 Optimization done." << std::endl;
 
 	try {
@@ -461,6 +557,15 @@ int main(int argc, char* argv[]) {
 	}
 
 	std::cout << "Code Generation done." << std::endl;
+
+	const auto end{ std::chrono::steady_clock::now() };
+	const std::chrono::duration<double> elapsed{ end - start };
+
+	if (silent) {
+		std::cout.clear();
+	}
+
+	std::cout << "Transpilation took: " << elapsed << std::endl;
 
 	return 0;
 }
