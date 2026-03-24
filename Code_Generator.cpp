@@ -314,61 +314,7 @@ static void parse_command_line_input(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
 	Config* c = c->getInstance();
 
-#if 0
 	parse_command_line_input(argc, argv);
-
-#else
-	c->set_optimize_core_merge();
-	c->set_orcc_compat();
-	c->set_cores(1);
-	c->set_FIFO_size(512);
-	c->set_cmake();
-	c->set_sched_non_preemptive();
-	c->set_verbose_ir_gen();
-	//c->clear_prolog_epilog_opt();
-
-#if 0
-	c->set_source_dir("C:\\Users\\Florian\\Downloads\\orc-apps-master\\ZigBee\\src");
-	c->set_target_dir("C:\\Users\\Florian\\Desktop\\y");
-	c->set_network_file("C:\\Users\\Florian\\Downloads\\orc-apps-master\\ZigBee\\src\\multitoken_tx\\Top_ZigBee_tx.xdf");
-#endif
-
-#if 0
-	// cannot print AST or generate composite code, seems to be stuck in some loop
-	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Predistortion\\src");
-	c->set_target_dir("C:\\Users\\Florian\\Desktop\\z");
-	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Predistortion\\src\\lowlevel_dpd\\Top_DPD.xdf");
-#endif
-
-#if 0
-	//cannot do get_do_code
-	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\DigitalFilters\\src");
-	c->set_target_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Code\\LMS_mod");
-	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\DigitalFilters\\src\\LMS\\LMS_lowlevel.xdf");
-#endif
-
-#if 0
-	//untested
-	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\FFT");
-	c->set_target_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Code\\FFT_mod");
-	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\DigitalFilters\\src\\LMS\\LMS_lowlevel.xdf");
-#endif
-
-#if 0
-	//stuck somewhere in optimization
-	c->set_source_dir("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Random\\250");
-	c->set_target_dir("C:\\Users\\Florian\\Desktop\\y");
-	c->set_network_file("C:\\Users\\Florian\\Desktop\\actor_merging2_benchmarks\\Random\\250\\xdf\\gen.xdf");
-#endif
-
-#if 1
-	c->set_source_dir("C:\\Users\\Florian\\Desktop\\Random_Merge");
-	c->set_target_dir("C:\\Users\\Florian\\Desktop\\y");
-	c->set_network_file("C:\\Users\\Florian\\Desktop\\Random_Merge\\xdf\\gen.xdf");
-#endif
-
-
-#endif
 
 	if (silent) {
 		std::cout.setstate(std::ios_base::failbit);
