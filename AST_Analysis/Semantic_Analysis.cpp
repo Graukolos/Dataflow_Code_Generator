@@ -6,6 +6,7 @@
 #include <tuple>
 #include <iostream>
 #include <assert.h>
+#include <algorithm>
 
 using SymbolName = std::string;
 

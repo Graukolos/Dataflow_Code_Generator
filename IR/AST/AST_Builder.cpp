@@ -18,7 +18,7 @@ void AST::AST_Builder::init_expression_context(ExprContext* e)
 AST::AST_Builder::AST_Builder()
 {
 	this->ast = new AST_Root{};
-	this->context = File;
+	this->context = ParserContext::File;
 	this->current_action = nullptr;
 	this->current_actor = nullptr;
 	this->current_statement = nullptr;
@@ -51,24 +51,24 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 		return;
 	}
 
-	if (context == File) {
+	if (context == ParserContext::File) {
 		/* nothing to do in this scope */
 	}
-	else if (context == IDList) {
+	else if (context == ParserContext::IDList) {
 		if (idlist.name.empty()) {
 			idlist.line = t.line;
 			idlist.character = t.character;
 		}
 		idlist.name.append(t.str);
 	}
-	else if (context == Import) {
+	else if (context == ParserContext::Import) {
 		if (t.type == Lexer::Identifier) {
 			assert(current_import != nullptr);
 			current_import->symbol.name = t.str;
 		}
 		/* Nothing to do, only drop keyword etc. */
 	}
-	else if (context == Actor) {
+	else if (context == ParserContext::Actor) {
 		if (t.str == "==>") {
 			outports = true;
 		}
@@ -80,7 +80,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 		}
 		/* drop some keywords etc. */
 	}
-	else if (context == ActorParameter) {
+	else if (context == ParserContext::ActorParameter) {
 		if (t.type == Lexer::Identifier) {
 			assert(current_actorparam != nullptr);
 			current_actorparam->name.name = t.str;
@@ -88,7 +88,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_actorparam->name.character = t.character;
 		}
 	}
-	else if (context == PortDecl) {
+	else if (context == ParserContext::PortDecl) {
 		assert(current_port != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_port->name.name = t.str;
@@ -96,7 +96,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_port->name.character = t.character;
 		}
 	}
-	else if (context == Parameter) {
+	else if (context == ParserContext::Parameter) {
 		assert(current_param != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_param->name.name = t.str;
@@ -104,7 +104,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_param->name.character = t.character;
 		}
 	}
-	else if (context == VarDefinition) {
+	else if (context == ParserContext::VarDefinition) {
 		assert(current_vardef != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_vardef->name.name = t.str;
@@ -115,7 +115,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_vardef->constassign = false;
 		}
 	}
-	else if (context == Unit) {
+	else if (context == ParserContext::Unit) {
 		assert(current_unit != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_unit->name.name = t.str;
@@ -123,13 +123,13 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_unit->name.character = t.character;
 		}
 	}
-	else if (context == Action) {
+	else if (context == ParserContext::Action) {
 		/* nothing to do, drop keywords etc. */
 	}
-	else if (context == InitAction) {
+	else if (context == ParserContext::InitAction) {
 		/* nothing to do, drop keyword etc. */
 	}
-	else if (context == Type) {
+	else if (context == ParserContext::Type) {
 		assert(current_type != nullptr);
 		if ((t.type == Lexer::Keyword) &&
 			((t.str == "list") || (t.str == "uint") || (t.str == "int") ||
@@ -140,37 +140,37 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_type->type.character = t.character;
 		}
 	}
-	else if (context == Statement) {
+	else if (context == ParserContext::Statement) {
 		assert(t.type == Lexer::Identifier);
 		statement_identifier.name = t.str;
 		statement_identifier.line = t.line;
 		statement_identifier.character = t.character;
 	}
-	else if (context == IfStatement) {
+	else if (context == ParserContext::IfStatement) {
 		/* Nothing to do, only drop keywords etc. */
 	}
-	else if (context == ElseStatement) {
+	else if (context == ParserContext::ElseStatement) {
 		/* Nothing to do, only drop keywords etc. */
 	}
-	else if (context == CallStatement) {
+	else if (context == ParserContext::CallStatement) {
 		/* nothing to do, only drop keyword etc. */
 		if (t.str == ";") {
 			end_CallStatement();
 		}
 	}
-	else if (context == BlockStatement) {
+	else if (context == ParserContext::BlockStatement) {
 		/* nothing to do, only drop keyword etc. */
 		if (t.str == "end") {
 			end_BlockStatement();
 		}
 	}
-	else if (context == WhileStatement) {
+	else if (context == ParserContext::WhileStatement) {
 		/* nothing to do, only drop keywords etc. */
 	}
-	else if (context == ForeachStatement) {
+	else if (context == ParserContext::ForeachStatement) {
 		/* nothing to do, only drop keywords etc. */
 	}
-	else if (context == AssignmentStatement) {
+	else if (context == ParserContext::AssignmentStatement) {
 		assert(current_statement != nullptr);
 		auto a = dynamic_cast<AST::AssignmentStatement*>(current_statement);
 		assert(a != nullptr);
@@ -181,16 +181,16 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			end_AssignmentStatement();
 		}
 	}
-	else if (context == Index) {
+	else if (context == ParserContext::Index) {
 		/* nothing to do, we just drop the two brakets */
 	}
-	else if (context == TernaryExpression) {
+	else if (context == ParserContext::TernaryExpression) {
 		/* nothing to do, just drop the keywords */
 	}
-	else if (context == CallExpression) {
+	else if (context == ParserContext::CallExpression) {
 		/* Nothing to do, simply skip keyword etc. */
 	}
-	else if (context == Operator) {
+	else if (context == ParserContext::Operator) {
 		assert(current_expression_context.current_operator != nullptr);
 		if (current_expression_context.current_operator->ops.empty()) {
 			current_expression_context.current_operator->character = t.character;
@@ -198,7 +198,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 		}
 		current_expression_context.current_operator->ops.append(t.str);
 	}
-	else if (context == Literal) {
+	else if (context == ParserContext::Literal) {
 		assert(current_expression_context.current_operand != nullptr);
 		auto l = dynamic_cast<AST::Literal*>(current_expression_context.current_operand);
 		assert(l != nullptr);
@@ -213,7 +213,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			l->literal.append(t.str);
 		}
 	}
-	else if (context == Expression) {
+	else if (context == ParserContext::Expression) {
 		assert(next_expr_braket == false);
 		assert(current_expression_context.current_expression != nullptr);
 		if (t.str == "(") {
@@ -232,10 +232,10 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			i->identifier = t.str;
 		}
 	}
-	else if (context == ListComprehension) {
+	else if (context == ParserContext::ListComprehension) {
 		/* nothing to do, simply skip the keywords etc. */
 	}
-	else if (context == Generator) {
+	else if (context == ParserContext::Generator) {
 		assert(current_expression_context.current_generator != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_expression_context.current_generator->identifier.name = t.str;
@@ -243,7 +243,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_expression_context.current_generator->identifier.character = t.character;
 		}
 	}
-	else if (context == Procedure) {
+	else if (context == ParserContext::Procedure) {
 		assert(current_procedure != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_procedure->name.name = t.str;
@@ -251,7 +251,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_procedure->name.character = t.character;
 		}
 	}
-	else if (context == Function) {
+	else if (context == ParserContext::Function) {
 		assert(current_function != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_function->name.name = t.str;
@@ -259,7 +259,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_function->name.character = t.character;
 		}
 	}
-	else if (context == UnaryOp) {
+	else if (context == ParserContext::UnaryOp) {
 		assert(current_expression_context.current_unaryop != nullptr);
 		if (current_expression_context.current_unaryop->ops.empty()) {
 			current_expression_context.current_unaryop->line = t.line;
@@ -267,7 +267,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 		}
 		current_expression_context.current_unaryop->ops.append(t.str);
 	}
-	else if (context == NativeFunction) {
+	else if (context == ParserContext::NativeFunction) {
 		assert(current_nativefunc != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_nativefunc->name.name = t.str;
@@ -275,7 +275,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_nativefunc->name.character = t.character;
 		}
 	}
-	else if (context == NativeProcedure) {
+	else if (context == ParserContext::NativeProcedure) {
 		assert(current_nativeproc != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_nativeproc->name.name = t.str;
@@ -283,7 +283,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_nativeproc->name.character = t.character;
 		}
 	}
-	else if (context == InputPattern) {
+	else if (context == ParserContext::InputPattern) {
 		assert(current_inputpattern != nullptr);
 		if (t.type == Lexer::Identifier) {
 			if (current_inputpattern->port.name.empty()) {
@@ -300,7 +300,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			}
 		}
 	}
-	else if (context == OutputExpression) {
+	else if (context == ParserContext::OutputExpression) {
 		assert(current_outputexpr != nullptr);
 		if (t.type == Lexer::Identifier) {
 			current_outputexpr->port.name = t.str;
@@ -308,13 +308,13 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_outputexpr->port.character = t.character;
 		}
 	}
-	else if (context == Repeat) {
+	else if (context == ParserContext::Repeat) {
 		/* nothing to do, just drop keywords */
 	}
-	else if (context == Guard) {
+	else if (context == ParserContext::Guard) {
 		/* nothing to do, just drop keywords */
 	}
-	else if (context == ScheduleFSM) {
+	else if (context == ParserContext::ScheduleFSM) {
 		if (t.type == Lexer::Identifier) {
 			assert(current_schedulefsm != nullptr);
 			assert(current_schedulefsm->inital_state.name.empty());
@@ -323,7 +323,7 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			current_schedulefsm->inital_state.character = t.character;
 		}
 	}
-	else if (context == StateTransition) {
+	else if (context == ParserContext::StateTransition) {
 		assert(current_fsmstate != nullptr);
 		if (t.type == Lexer::Identifier) {
 			if (current_fsmstate->state.name.empty()) {
@@ -339,10 +339,10 @@ void AST::AST_Builder::add_token(Lexer::Token& t)
 			}
 		}
 	}
-	else if (context == PriorityInequality) {
+	else if (context == ParserContext::PriorityInequality) {
 		/* nothing to do, only drop keywords etc. */
 	}
-	else if (context == Array) {
+	else if (context == ParserContext::Array) {
 		if ((t.type == Lexer::Delimiter) && (t.str == "]")) {
 			end_Array();
 		}
@@ -362,33 +362,33 @@ AST::AST_Root* AST::AST_Builder::get_ast(void)
 void AST::AST_Builder::start_Import(void)
 {
 	context_stack.push_back(context);
-	context = Import;
+	context = ParserContext::Import;
 	current_import = new AST::Import();
 }
 
 void AST::AST_Builder::end_Import(void)
 {
 	/* Callback might be called not in the Import context! */
-	if (context == Import) {
+	if (context == ParserContext::Import) {
 		assert(current_import != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
 		ast->imports.push_back(current_import);
 		current_import = nullptr;
 		
-		assert(context == File);
+		assert(context == ParserContext::File);
 	}
 }
 
 void AST::AST_Builder::start_Actor(void)
 {
 	context_stack.push_back(context);
-	context = Actor;
+	context = ParserContext::Actor;
 	current_actor = new AST::Actor();
 }
 void AST::AST_Builder::end_Actor(void)
 {
-	assert(context == Actor);
+	assert(context == ParserContext::Actor);
 	assert(current_actor != nullptr);
 	assert(ast != nullptr);
 	context = context_stack.back();
@@ -396,19 +396,19 @@ void AST::AST_Builder::end_Actor(void)
 	this->ast->actor = current_actor;
 	current_actor = nullptr;
 
-	assert(context == File);
+	assert(context == ParserContext::File);
 }
 
 void AST::AST_Builder::start_ActorPar(void)
 {
 	context_stack.push_back(context);
-	context = ActorParameter;
+	context = ParserContext::ActorParameter;
 	current_actorparam = new AST::ActorParameter();
 }
 
 void AST::AST_Builder::end_ActorPar(void)
 {
-	assert(context == ActorParameter);
+	assert(context == ParserContext::ActorParameter);
 	{
 		assert(current_actorparam != nullptr);
 		assert(current_actor != nullptr);
@@ -416,20 +416,20 @@ void AST::AST_Builder::end_ActorPar(void)
 		context_stack.pop_back();
 		current_actor->parameters.push_back(current_actorparam);
 		current_actorparam = nullptr;
-		assert(context == Actor);
+		assert(context == ParserContext::Actor);
 	}
 }
 
 void AST::AST_Builder::start_PortDecl(void)
 {
 	context_stack.push_back(context);
-	context = PortDecl;
+	context = ParserContext::PortDecl;
 	current_port = new AST::Port();
 }
 
 void AST::AST_Builder::end_PortDecl(void)
 {
-	assert(context == PortDecl);
+	assert(context == ParserContext::PortDecl);
 	{
 		context = context_stack.back();
 		context_stack.pop_back();
@@ -448,13 +448,13 @@ void AST::AST_Builder::end_PortDecl(void)
 void AST::AST_Builder::start_Unit(void)
 {
 	context_stack.push_back(context);
-	context = Unit;
+	context = ParserContext::Unit;
 	current_unit = new AST::Unit();
 }
 
 void AST::AST_Builder::end_Unit(void)
 {
-	assert(context == Unit);
+	assert(context == ParserContext::Unit);
 	assert(current_unit != nullptr);
 	assert(ast != nullptr);
 
@@ -463,37 +463,37 @@ void AST::AST_Builder::end_Unit(void)
 	ast->unit = current_unit;
 	current_unit = nullptr;
 
-	assert(context == File);
+	assert(context == ParserContext::File);
 }
 
 void AST::AST_Builder::start_Parameter(void)
 {
 	context_stack.push_back(context);
-	context = Parameter;
+	context = ParserContext::Parameter;
 	current_param = new AST::Parameter();
 }
 
 void AST::AST_Builder::end_Parameter(void)
 {
-	assert(context == Parameter);
+	assert(context == ParserContext::Parameter);
 	{
 		assert(current_param != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
 
-		if (context == Function) {
+		if (context == ParserContext::Function) {
 			assert(current_function != nullptr);
 			current_function->parameters.push_back(current_param);
 		}
-		else if (context == NativeFunction) {
+		else if (context == ParserContext::NativeFunction) {
 			assert(current_nativefunc != nullptr);
 			current_nativefunc->parameters.push_back(current_param);
 		}
-		else if (context == NativeProcedure) {
+		else if (context == ParserContext::NativeProcedure) {
 			assert(current_nativeproc != nullptr);
 			current_nativeproc->parameters.push_back(current_param);
 		}
-		else if (context == Procedure) {
+		else if (context == ParserContext::Procedure) {
 			assert(current_procedure != nullptr);
 			current_procedure->parameters.push_back(current_param);
 		}
@@ -507,13 +507,13 @@ void AST::AST_Builder::end_Parameter(void)
 void AST::AST_Builder::start_VarDefinition(void)
 {
 	context_stack.push_back(context);
-	context = VarDefinition;
+	context = ParserContext::VarDefinition;
 	current_vardef = new AST::VarDefinition();
 }
 
 void AST::AST_Builder::end_VarDefinition(void)
 {
-	if (context == VarDefinition) {
+	if (context == ParserContext::VarDefinition) {
 		assert(current_vardef != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
@@ -522,38 +522,38 @@ void AST::AST_Builder::end_VarDefinition(void)
 			current_vardef->constassign = false;
 		}
 
-		if (context == Action) {
+		if (context == ParserContext::Action) {
 			assert(current_action != nullptr);
 			current_action->vars.push_back(current_vardef);
 		}
-		else if (context == InitAction) {
+		else if (context == ParserContext::InitAction) {
 			assert(current_action != nullptr);
 			current_action->vars.push_back(current_vardef);
 		}
-		else if (context == BlockStatement) {
+		else if (context == ParserContext::BlockStatement) {
 			AST::BlockStatement* b = dynamic_cast<AST::BlockStatement*>(current_statement);
 			assert(b != nullptr);
 			b->vars.push_back(current_vardef);
 		}
-		else if (context == WhileStatement) {
+		else if (context == ParserContext::WhileStatement) {
 			AST::WhileStatement* w = dynamic_cast<AST::WhileStatement*>(current_statement);
 			assert(w != nullptr);
 			w->vars.push_back(current_vardef);
 		}
-		else if (context == ForeachStatement) {
+		else if (context == ParserContext::ForeachStatement) {
 			AST::ForeachStatement* f = dynamic_cast<AST::ForeachStatement*>(current_statement);
 			assert(f != nullptr);
 			f->vars.push_back(current_vardef);
 		}
-		else if (context == Procedure) {
+		else if (context == ParserContext::Procedure) {
 			assert(current_procedure != nullptr);
 			current_procedure->vars.push_back(current_vardef);
 		}
-		else if (context == Actor) {
+		else if (context == ParserContext::Actor) {
 			assert(current_actor != nullptr);
 			current_actor->vars.push_back(current_vardef);
 		}
-		else if (context == Unit) {
+		else if (context == ParserContext::Unit) {
 			assert(current_unit != nullptr);
 			current_unit->vars.push_back(current_vardef);
 		}
@@ -569,13 +569,13 @@ void AST::AST_Builder::end_VarDefinition(void)
 void AST::AST_Builder::start_Action(void)
 {
 	context_stack.push_back(context);
-	context = Action;
+	context = ParserContext::Action;
 	current_action = new AST::Action();
 }
 
 void AST::AST_Builder::end_Action(void)
 {
-	assert(context == Action);
+	assert(context == ParserContext::Action);
 	assert(current_action != nullptr);
 	assert(current_actor != nullptr);
 	context = context_stack.back();
@@ -583,19 +583,19 @@ void AST::AST_Builder::end_Action(void)
 	current_actor->actions.push_back(current_action);
 	current_action = nullptr;
 
-	assert(context == Actor);
+	assert(context == ParserContext::Actor);
 }
 
 void AST::AST_Builder::start_InitAction(void)
 {
 	context_stack.push_back(context);
-	context = InitAction;
+	context = ParserContext::InitAction;
 	current_action = new AST::Action();
 }
 
 void AST::AST_Builder::end_InitAction(void)
 {
-	assert(context == InitAction);
+	assert(context == ParserContext::InitAction);
 	assert(current_action != nullptr);
 	assert(current_actor != nullptr);
 	context = context_stack.back();
@@ -603,54 +603,54 @@ void AST::AST_Builder::end_InitAction(void)
 	current_actor->init = current_action;
 	current_action = nullptr;
 
-	assert(context == Actor);
+	assert(context == ParserContext::Actor);
 }
 
 void AST::AST_Builder::start_Type(void)
 {
 	context_stack.push_back(context);
-	context = Type;
+	context = ParserContext::Type;
 	type_stack.push_back(current_type);
 	current_type = new AST::Type();
 }
 
 void AST::AST_Builder::end_Type(void)
 {
-	assert(context == Type);
+	assert(context == ParserContext::Type);
 	assert(current_type != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
 	AST::Type* prev = type_stack.back();
 
-	if (context == ActorParameter) {
+	if (context == ParserContext::ActorParameter) {
 		assert(current_actorparam != nullptr);
 		current_actorparam->type = *current_type;
 	}
-	else if (context == Generator) {
+	else if (context == ParserContext::Generator) {
 		assert(current_expression_context.current_generator != nullptr);
 		current_expression_context.current_generator->type = current_type;
 	}
-	else if (context == VarDefinition) {
+	else if (context == ParserContext::VarDefinition) {
 		assert(current_vardef != nullptr);
 		current_vardef->type = *current_type;
 	}
-	else if (context == Parameter) {
+	else if (context == ParserContext::Parameter) {
 		assert(current_param != nullptr);
 		current_param->type = *current_type;
 	}
-	else if (context == PortDecl) {
+	else if (context == ParserContext::PortDecl) {
 		assert(current_port != nullptr);
 		current_port->type = *current_type;
 	}
-	else if (context == Function) {
+	else if (context == ParserContext::Function) {
 		assert(current_function != nullptr);
 		current_function->ret_type = *current_type;
 	}
-	else if (context == NativeFunction) {
+	else if (context == ParserContext::NativeFunction) {
 		assert(current_nativefunc != nullptr);
 		current_nativefunc->ret_type = *current_type;
 	}
-	else if (context == Type) {
+	else if (context == ParserContext::Type) {
 		assert(current_type != nullptr);
 		assert(prev != nullptr);
 		prev->listtype = current_type;
@@ -666,14 +666,14 @@ void AST::AST_Builder::end_Type(void)
 void AST::AST_Builder::start_Statement(void)
 {
 	context_stack.push_back(context);
-	context = Statement;
+	context = ParserContext::Statement;
 }
 
 void AST::AST_Builder::end_Statement(void)
 {
-	assert((context == IfStatement) || (context == ElseStatement) || (context == AssignmentStatement) ||
-		(context == ForeachStatement) || (context == WhileStatement) || (context == BlockStatement) ||
-		(context == CallStatement));
+	assert((context == ParserContext::IfStatement) || (context == ParserContext::ElseStatement) || (context == ParserContext::AssignmentStatement) ||
+		(context == ParserContext::ForeachStatement) || (context == ParserContext::WhileStatement) || (context == ParserContext::BlockStatement) ||
+		(context == ParserContext::CallStatement));
 
 	ParserContext ending = context;
 	context = context_stack.back();
@@ -685,36 +685,36 @@ void AST::AST_Builder::end_Statement(void)
 		statement_stack.pop_back();
 	}
 
-	if ((context == Action) || (context == InitAction)) {
+	if ((context == ParserContext::Action) || (context == ParserContext::InitAction)) {
 		assert(current_action != nullptr);
 		current_action->statements.push_back(current_statement);
 	}
-	else if (context == ForeachStatement) {
+	else if (context == ParserContext::ForeachStatement) {
 		AST::ForeachStatement* f = dynamic_cast<AST::ForeachStatement*>(s);
 		assert(f != nullptr);
 		f->statements.push_back(current_statement);
 	}
-	else if (context == WhileStatement) {
+	else if (context == ParserContext::WhileStatement) {
 		AST::WhileStatement* w = dynamic_cast<AST::WhileStatement*>(s);
 		assert(w != nullptr);
 		w->statements.push_back(current_statement);
 	}
-	else if (context == IfStatement) {
+	else if (context == ParserContext::IfStatement) {
 		AST::IfStatement *i = dynamic_cast<AST::IfStatement*>(s);
 		assert(i != nullptr);
 		i->ifblock.push_back(current_statement);
 	}
-	else if (context == ElseStatement) {
+	else if (context == ParserContext::ElseStatement) {
 		AST::ElseStatement* e = dynamic_cast<AST::ElseStatement*>(s);
 		assert(e != nullptr);
 		e->statements.push_back(current_statement);
 	}
-	else if (context == BlockStatement) {
+	else if (context == ParserContext::BlockStatement) {
 		AST::BlockStatement* b = dynamic_cast<AST::BlockStatement*>(s);
 		assert(b != nullptr);
 		b->statements.push_back(current_statement);
 	}
-	else if (context == Procedure) {
+	else if (context == ParserContext::Procedure) {
 		assert(current_procedure != nullptr);
 		current_procedure->statements.push_back(current_statement);
 	}
@@ -727,7 +727,7 @@ void AST::AST_Builder::end_Statement(void)
 
 void AST::AST_Builder::start_IfStatement(void)
 {
-	context = IfStatement;
+	context = ParserContext::IfStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -736,8 +736,8 @@ void AST::AST_Builder::start_IfStatement(void)
 
 void AST::AST_Builder::start_ElseStatement(void)
 {
-	assert(context == IfStatement);
-	context = ElseStatement;
+	assert(context == ParserContext::IfStatement);
+	context = ParserContext::ElseStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -746,7 +746,7 @@ void AST::AST_Builder::start_ElseStatement(void)
 
 void AST::AST_Builder::end_IfStatement(void)
 {
-	if (context == ElseStatement) {
+	if (context == ParserContext::ElseStatement) {
 		AST::Statement *s = statement_stack.back();
 		AST::IfStatement* i = dynamic_cast<AST::IfStatement*>(s);
 		assert(i != nullptr);
@@ -754,17 +754,17 @@ void AST::AST_Builder::end_IfStatement(void)
 		assert(i->elseblock != nullptr);
 		current_statement = s;
 		statement_stack.pop_back();
-		context = IfStatement;
+		context = ParserContext::IfStatement;
 		end_Statement();
 	}
-	else if (context == IfStatement) {
+	else if (context == ParserContext::IfStatement) {
 		end_Statement();
 	}
 }
 
 void AST::AST_Builder::start_CallStatement(void)
 {
-	context = CallStatement;
+	context = ParserContext::CallStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -775,13 +775,13 @@ void AST::AST_Builder::start_CallStatement(void)
 
 void AST::AST_Builder::end_CallStatement(void)
 {
-	assert(context == CallStatement);
+	assert(context == ParserContext::CallStatement);
 	end_Statement();
 }
 
 void AST::AST_Builder::start_BlockStatement(void)
 {
-	context = BlockStatement;
+	context = ParserContext::BlockStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -790,13 +790,13 @@ void AST::AST_Builder::start_BlockStatement(void)
 
 void AST::AST_Builder::end_BlockStatement(void)
 {
-	assert(context == BlockStatement);
+	assert(context == ParserContext::BlockStatement);
 	end_Statement();
 }
 
 void AST::AST_Builder::start_WhileStatement(void)
 {
-	context = WhileStatement;
+	context = ParserContext::WhileStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -805,13 +805,13 @@ void AST::AST_Builder::start_WhileStatement(void)
 
 void AST::AST_Builder::end_WhileStatement(void)
 {
-	assert(context == WhileStatement);
+	assert(context == ParserContext::WhileStatement);
 	end_Statement();
 }
 
 void AST::AST_Builder::start_ForeachStatement(void)
 {
-	context = ForeachStatement;
+	context = ParserContext::ForeachStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -820,13 +820,13 @@ void AST::AST_Builder::start_ForeachStatement(void)
 
 void AST::AST_Builder::end_ForeachStatement(void)
 {
-	assert(context == ForeachStatement);
+	assert(context == ParserContext::ForeachStatement);
 	end_Statement();
 }
 
 void AST::AST_Builder::start_AssignmentStatement(void)
 {
-	context = AssignmentStatement;
+	context = ParserContext::AssignmentStatement;
 	if (current_statement != nullptr) {
 		statement_stack.push_back(current_statement);
 	}
@@ -837,25 +837,25 @@ void AST::AST_Builder::start_AssignmentStatement(void)
 
 void AST::AST_Builder::end_AssignmentStatement(void)
 {
-	assert(context == AssignmentStatement);
+	assert(context == ParserContext::AssignmentStatement);
 	end_Statement();
 }
 
 void AST::AST_Builder::start_Index(void)
 {
 	context_stack.push_back(context);
-	context = Index;
+	context = ParserContext::Index;
 	current_expression_context.current_index = new AST::Index();
 }
 
 void AST::AST_Builder::end_Index(void)
 {
-	assert(context == Index);
+	assert(context == ParserContext::Index);
 	assert(current_expression_context.current_index != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
 
-	if (context == AssignmentStatement) {
+	if (context == ParserContext::AssignmentStatement) {
 		AST::AssignmentStatement* a = dynamic_cast<AST::AssignmentStatement*>(current_statement);
 		assert(a != nullptr);
 		a->indices.push_back(current_expression_context.current_index);
@@ -871,13 +871,13 @@ void AST::AST_Builder::end_Index(void)
 void AST::AST_Builder::start_CallExpression(void)
 {
 	context_stack.push_back(context);
-	context = CallExpression;
+	context = ParserContext::CallExpression;
 	current_expression_context.current_call = new AST::Call();
 }
 
 void AST::AST_Builder::end_CallExpression(void)
 {
-	assert(context == CallExpression);
+	assert(context == ParserContext::CallExpression);
 	assert(current_expression_context.current_call != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -891,7 +891,7 @@ void AST::AST_Builder::end_CallExpression(void)
 void AST::AST_Builder::start_Operator(void)
 {
 	context_stack.push_back(context);
-	context = Operator;
+	context = ParserContext::Operator;
 	auto o = new AST::Operator();
 
 	assert(current_expression_context.current_expression != nullptr);
@@ -932,7 +932,7 @@ void AST::AST_Builder::start_Operator(void)
 
 void AST::AST_Builder::end_Operator(void)
 {
-	assert(context == Operator);
+	assert(context == ParserContext::Operator);
 
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -941,13 +941,13 @@ void AST::AST_Builder::end_Operator(void)
 void AST::AST_Builder::start_Literal(void)
 {
 	context_stack.push_back(context);
-	context = Literal;
+	context = ParserContext::Literal;
 	current_expression_context.current_operand = new AST::Literal();
 }
 
 void AST::AST_Builder::end_Literal(void)
 {
-	assert(context == Literal);
+	assert(context == ParserContext::Literal);
 
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -965,7 +965,7 @@ void AST::AST_Builder::start_Expression(void)
 	}
 #endif
 	context_stack.push_back(context);
-	context = Expression;
+	context = ParserContext::Expression;
 	expression_context_stack.push_back(current_expression_context);
 	init_expression_context(&current_expression_context);
 	current_expression_context.current_expression = new AST::Expression();
@@ -977,7 +977,7 @@ void AST::AST_Builder::start_Expression(void)
 
 void AST::AST_Builder::end_Expression(void)
 {
-	assert(context == Expression);
+	assert(context == ParserContext::Expression);
 	context = context_stack.back();
 	context_stack.pop_back();
 
@@ -994,7 +994,7 @@ void AST::AST_Builder::end_Expression(void)
 
 	auto prev = expression_context_stack.back();
 
-	if (context == Generator) {
+	if (context == ParserContext::Generator) {
 		assert(prev.current_generator != nullptr);
 		if (prev.current_generator->start == nullptr) {
 			prev.current_generator->start = current_expression_context.current_expression;
@@ -1003,12 +1003,12 @@ void AST::AST_Builder::end_Expression(void)
 			prev.current_generator->end = current_expression_context.current_expression;
 		}
 	}
-	else if (context == IfStatement) {
+	else if (context == ParserContext::IfStatement) {
 		AST::IfStatement* i = dynamic_cast<AST::IfStatement*>(current_statement);
 		assert(i != nullptr);
 		i->condition = current_expression_context.current_expression;
 	}
-	else if (context == TernaryExpression) {
+	else if (context == ParserContext::TernaryExpression) {
 		auto t = dynamic_cast<AST::TernaryOperator*>(prev.current_operand);
 		assert(t != nullptr);
 		if (t->cond == nullptr) {
@@ -1025,21 +1025,21 @@ void AST::AST_Builder::end_Expression(void)
 			assert(0);
 		}
 	}
-	else if (context == OutputExpression) {
+	else if (context == ParserContext::OutputExpression) {
 		assert(current_outputexpr != nullptr);
 		current_outputexpr->expressions.push_back(current_expression_context.current_expression);
 	}
-	else if (context == Guard) {
+	else if (context == ParserContext::Guard) {
 		assert(current_action != nullptr);
 		current_action->guards.push_back(current_expression_context.current_expression);
 	}
-	else if (context == Repeat) {
+	else if (context == ParserContext::Repeat) {
 		auto c = context_stack.back();
-		if (c == InputPattern) {
+		if (c == ParserContext::InputPattern) {
 			assert(current_inputpattern != nullptr);
 			current_inputpattern->repeat = current_expression_context.current_expression;
 		}
-		else if (c == OutputExpression) {
+		else if (c == ParserContext::OutputExpression) {
 			assert(current_outputexpr != nullptr);
 			current_outputexpr->repeat = current_expression_context.current_expression;
 		}
@@ -1048,54 +1048,54 @@ void AST::AST_Builder::end_Expression(void)
 			assert(0);
 		}
 	}
-	else if (context == VarDefinition) {
+	else if (context == ParserContext::VarDefinition) {
 		assert(current_vardef != nullptr);
 		current_vardef->assign = current_expression_context.current_expression;
 	}
-	else if (context == Array) {
+	else if (context == ParserContext::Array) {
 		assert(current_vardef != nullptr);
 		current_vardef->arrays.push_back(current_expression_context.current_expression);
 	}
-	else if (context == WhileStatement) {
+	else if (context == ParserContext::WhileStatement) {
 		auto w = dynamic_cast<AST::WhileStatement*>(current_statement);
 		assert(w != nullptr);
 		w->condition = current_expression_context.current_expression;
 	}
-	else if (context == CallExpression) {
+	else if (context == ParserContext::CallExpression) {
 		assert(prev.current_call != nullptr);
 		prev.current_call->parameters.push_back(current_expression_context.current_expression);
 	}
-	else if (context == CallStatement) {
+	else if (context == ParserContext::CallStatement) {
 		auto c = dynamic_cast<AST::CallStatement*>(current_statement);
 		assert(c != nullptr);
 		c->parameters.push_back(current_expression_context.current_expression);
 	}
-	else if (context == Index) {
+	else if (context == ParserContext::Index) {
 		assert(prev.current_index != nullptr);
 		prev.current_index->index = current_expression_context.current_expression;
 	}
-	else if (context == AssignmentStatement) {
+	else if (context == ParserContext::AssignmentStatement) {
 		auto a = dynamic_cast<AST::AssignmentStatement*>(current_statement);
 		assert(a != nullptr);
 		a->asgnvalue = current_expression_context.current_expression;
 	}
-	else if (context == ListComprehension) {
+	else if (context == ParserContext::ListComprehension) {
 		assert(prev.current_listcomprehension != nullptr);
 		prev.current_listcomprehension->expressions.push_back(current_expression_context.current_expression);
 	}
-	else if (context == Type) {
+	else if (context == ParserContext::Type) {
 		assert(current_type != nullptr);
 		current_type->size = current_expression_context.current_expression;
 	}
-	else if (context == Function) {
+	else if (context == ParserContext::Function) {
 		assert(current_function != nullptr);
 		current_function->expression = current_expression_context.current_expression;
 	}
-	else if (context == ActorParameter) {
+	else if (context == ParserContext::ActorParameter) {
 		assert(current_actorparam != nullptr);
 		current_actorparam->asign = current_expression_context.current_expression;
 	}
-	else if (context == Expression) {
+	else if (context == ParserContext::Expression) {
 		assert(prev.current_expression != nullptr);
 		if (prev.current_expression->child == nullptr) {
 			prev.current_expression->child = current_expression_context.current_expression;
@@ -1119,13 +1119,13 @@ void AST::AST_Builder::end_Expression(void)
 void AST::AST_Builder::start_TernaryExpression(void)
 {
 	context_stack.push_back(context);
-	context = TernaryExpression;
+	context = ParserContext::TernaryExpression;
 	current_expression_context.current_operand = new AST::TernaryOperator();
 }
 
 void AST::AST_Builder::end_TernaryExpression(void)
 {
-	if (context == TernaryExpression) {
+	if (context == ParserContext::TernaryExpression) {
 		context = context_stack.back();
 		context_stack.pop_back();
 	}
@@ -1134,13 +1134,13 @@ void AST::AST_Builder::end_TernaryExpression(void)
 void AST::AST_Builder::start_UnaryOp(void)
 {
 	context_stack.push_back(context);
-	context = UnaryOp;
+	context = ParserContext::UnaryOp;
 	current_expression_context.current_unaryop = new AST::UnaryOperator();
 }
 
 void AST::AST_Builder::end_UnaryOp(void)
 {
-	assert(context == UnaryOp);
+	assert(context == ParserContext::UnaryOp);
 	assert(current_expression_context.current_unaryop != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -1160,13 +1160,13 @@ void AST::AST_Builder::end_UnaryOp(void)
 void AST::AST_Builder::start_ListComprehension(void)
 {
 	context_stack.push_back(context);
-	context = ListComprehension;
+	context = ParserContext::ListComprehension;
 	current_expression_context.current_listcomprehension = new AST::ListComprehension();
 }
 
 void AST::AST_Builder::end_ListComprehension(void)
 {
-	assert(context == ListComprehension);
+	assert(context == ParserContext::ListComprehension);
 	assert(current_expression_context.current_listcomprehension != nullptr);
 	assert(current_expression_context.current_expression->child == nullptr);
 	context = context_stack.back();
@@ -1180,23 +1180,23 @@ void AST::AST_Builder::end_ListComprehension(void)
 void AST::AST_Builder::start_Generator(void)
 {
 	context_stack.push_back(context);
-	context = Generator;
+	context = ParserContext::Generator;
 	current_expression_context.current_generator = new AST::Generator();
 }
 
 void AST::AST_Builder::end_Generator(void)
 {
-	assert(context == Generator);
+	assert(context == ParserContext::Generator);
 	assert(current_expression_context.current_generator != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
 
-	if (context == ForeachStatement) {
+	if (context == ParserContext::ForeachStatement) {
 		AST::ForeachStatement* f = dynamic_cast<AST::ForeachStatement*>(current_statement);
 		assert(f != nullptr);
 		f->generators.push_back(current_expression_context.current_generator);
 	}
-	else if (context == ListComprehension) {
+	else if (context == ParserContext::ListComprehension) {
 		assert(current_expression_context.current_listcomprehension != nullptr);
 		current_expression_context.current_listcomprehension->generators.push_back(
 			current_expression_context.current_generator);
@@ -1211,22 +1211,22 @@ void AST::AST_Builder::end_Generator(void)
 void AST::AST_Builder::start_Procedure(void)
 {
 	context_stack.push_back(context);
-	context = Procedure;
+	context = ParserContext::Procedure;
 	current_procedure = new AST::Procedure();
 }
 
 void AST::AST_Builder::end_Procedure(void)
 {
-	if (context == Procedure) {
+	if (context == ParserContext::Procedure) {
 		assert(current_procedure != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
 
-		if (context == Actor) {
+		if (context == ParserContext::Actor) {
 			assert(current_actor != nullptr);
 			current_actor->procedures.push_back(current_procedure);
 		}
-		else if (context == Unit) {
+		else if (context == ParserContext::Unit) {
 			assert(current_unit != nullptr);
 			current_unit->procedures.push_back(current_procedure);
 		}
@@ -1237,14 +1237,14 @@ void AST::AST_Builder::end_Procedure(void)
 		current_procedure = nullptr;
 	}
 	else {
-		assert(context == NativeProcedure);
+		assert(context == ParserContext::NativeProcedure);
 	}
 }
 
 void AST::AST_Builder::start_Function(void)
 {
 	context_stack.push_back(context);
-	context = Function;
+	context = ParserContext::Function;
 	current_function = new AST::Function();
 
 
@@ -1253,16 +1253,16 @@ void AST::AST_Builder::start_Function(void)
 void AST::AST_Builder::end_Function(void)
 {
 	/* Function is called for native and for function end! */
-	if (context == Function) {
+	if (context == ParserContext::Function) {
 		assert(current_function != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
 
-		if (context == Actor) {
+		if (context == ParserContext::Actor) {
 			assert(current_actor != nullptr);
 			current_actor->functions.push_back(current_function);
 		}
-		else if (context == Unit) {
+		else if (context == ParserContext::Unit) {
 			assert(current_unit != nullptr);
 			current_unit->functions.push_back(current_function);
 		}
@@ -1273,30 +1273,30 @@ void AST::AST_Builder::end_Function(void)
 		current_function = nullptr;
 	}
 	else {
-		assert(context == NativeFunction);
+		assert(context == ParserContext::NativeFunction);
 	}
 }
 
 void AST::AST_Builder::start_NativeFunction(void)
 {
 	context_stack.push_back(context);
-	context = NativeFunction;
+	context = ParserContext::NativeFunction;
 	current_nativefunc = new AST::NativeFunction();
 }
 
 void AST::AST_Builder::end_NativeFunction(void)
 {
 	/* Function is called for native and for function end! */
-	if (context == NativeFunction) {
+	if (context == ParserContext::NativeFunction) {
 		assert(current_nativefunc != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
 
-		if (context == Actor) {
+		if (context == ParserContext::Actor) {
 			assert(current_actor != nullptr);
 			current_actor->nativefunctions.push_back(current_nativefunc);
 		}
-		else if (context == Unit) {
+		else if (context == ParserContext::Unit) {
 			assert(current_unit != nullptr);
 			current_unit->nativefunctions.push_back(current_nativefunc);
 		}
@@ -1311,23 +1311,23 @@ void AST::AST_Builder::end_NativeFunction(void)
 void AST::AST_Builder::start_NativeProcedure(void)
 {
 	context_stack.push_back(context);
-	context = NativeProcedure;
+	context = ParserContext::NativeProcedure;
 	current_nativeproc = new AST::NativeProcedure();
 }
 
 void AST::AST_Builder::end_NativeProcedure(void)
 {
 	/* Function is called for native and for function end! */
-	if (context == NativeProcedure) {
+	if (context == ParserContext::NativeProcedure) {
 		assert(current_nativeproc != nullptr);
 		context = context_stack.back();
 		context_stack.pop_back();
 
-		if (context == Actor) {
+		if (context == ParserContext::Actor) {
 			assert(current_actor != nullptr);
 			current_actor->nativeprocedures.push_back(current_nativeproc);
 		}
-		else if (context == Unit) {
+		else if (context == ParserContext::Unit) {
 			assert(current_unit != nullptr);
 			current_unit->nativeprocedures.push_back(current_nativeproc);
 		}
@@ -1342,13 +1342,13 @@ void AST::AST_Builder::end_NativeProcedure(void)
 void AST::AST_Builder::start_InputPattern(void)
 {
 	context_stack.push_back(context);
-	context = InputPattern;
+	context = ParserContext::InputPattern;
 	current_inputpattern = new AST::Input_Pattern();
 }
 
 void AST::AST_Builder::end_InputPattern(void)
 {
-	assert(context == InputPattern);
+	assert(context == ParserContext::InputPattern);
 	assert(current_inputpattern != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -1360,13 +1360,13 @@ void AST::AST_Builder::end_InputPattern(void)
 void AST::AST_Builder::start_OutputExpression(void)
 {
 	context_stack.push_back(context);
-	context = OutputExpression;
+	context = ParserContext::OutputExpression;
 	current_outputexpr = new AST::Output_Expression();
 }
 
 void AST::AST_Builder::end_OutputExpression(void)
 {
-	assert(context == OutputExpression);
+	assert(context == ParserContext::OutputExpression);
 	assert(current_outputexpr != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -1378,12 +1378,12 @@ void AST::AST_Builder::end_OutputExpression(void)
 void AST::AST_Builder::start_Repeat(void)
 {
 	context_stack.push_back(context);
-	context = Repeat;
+	context = ParserContext::Repeat;
 }
 
 void AST::AST_Builder::end_Repeat(void)
 {
-	assert(context == Repeat);
+	assert(context == ParserContext::Repeat);
 
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -1392,29 +1392,29 @@ void AST::AST_Builder::end_Repeat(void)
 void AST::AST_Builder::start_Guard(void)
 {
 	context_stack.push_back(context);
-	context = Guard;
+	context = ParserContext::Guard;
 }
 
 void AST::AST_Builder::end_Guard(void)
 {
-	assert(context == Guard);
+	assert(context == ParserContext::Guard);
 
 	context = context_stack.back();
 	context_stack.pop_back();
 
-	assert(context == Action);
+	assert(context == ParserContext::Action);
 }
 
 void AST::AST_Builder::start_scheduleFSM(void)
 {
 	context_stack.push_back(context);
-	context = ScheduleFSM;
+	context = ParserContext::ScheduleFSM;
 	current_schedulefsm = new AST::Schedule_FSM();
 }
 
 void AST::AST_Builder::end_scheduleFSM(void)
 {
-	assert(context == ScheduleFSM);
+	assert(context == ParserContext::ScheduleFSM);
 	assert(current_schedulefsm != nullptr);
 	context = context_stack.back();
 	context_stack.pop_back();
@@ -1422,20 +1422,20 @@ void AST::AST_Builder::end_scheduleFSM(void)
 	current_actor->fsm = current_schedulefsm;
 	current_schedulefsm = nullptr;
 
-	assert(context == Actor);
+	assert(context == ParserContext::Actor);
 }
 
 void AST::AST_Builder::start_StateTransition(void)
 {
 	context_stack.push_back(context);
-	context = StateTransition;
+	context = ParserContext::StateTransition;
 	current_fsmstate = new AST::Schedule_FSM_State();
 }
 
 void AST::AST_Builder::end_StateTransition(void)
 {
-	if (context != StateTransition) {
-		assert(context == ScheduleFSM);
+	if (context != ParserContext::StateTransition) {
+		assert(context == ParserContext::ScheduleFSM);
 		return;
 	}
 	assert(current_fsmstate != nullptr);
@@ -1445,20 +1445,20 @@ void AST::AST_Builder::end_StateTransition(void)
 	current_schedulefsm->transitions.push_back(current_fsmstate);
 	current_fsmstate = nullptr;
 
-	assert(context == ScheduleFSM);
+	assert(context == ParserContext::ScheduleFSM);
 }
 
 void AST::AST_Builder::start_PriorityInequality(void)
 {
 	context_stack.push_back(context);
-	context = PriorityInequality;
+	context = ParserContext::PriorityInequality;
 	current_prio = new AST::Action_Priority();
 }
 
 void AST::AST_Builder::end_PriorityInequality(void)
 {
-	if (context != PriorityInequality) {
-		assert(context == Actor);
+	if (context != ParserContext::PriorityInequality) {
+		assert(context == ParserContext::Actor);
 		return;
 	}
 
@@ -1469,13 +1469,13 @@ void AST::AST_Builder::end_PriorityInequality(void)
 	current_actor->prios.push_back(current_prio);
 	current_prio = nullptr;
 
-	assert(context == Actor);
+	assert(context == ParserContext::Actor);
 }
 
 void AST::AST_Builder::start_IDList(void)
 {
 	context_stack.push_back(context);
-	context = IDList;
+	context = ParserContext::IDList;
 	idlist.name.clear();
 }
 
@@ -1484,7 +1484,7 @@ void AST::AST_Builder::end_IDList(void)
 	context = context_stack.back();
 	context_stack.pop_back();
 
-	if (context == Import) {
+	if (context == ParserContext::Import) {
 		assert(current_import != nullptr);
 		AST::ID x;
 		auto split = idlist.name.find_last_of(".");
@@ -1496,19 +1496,19 @@ void AST::AST_Builder::end_IDList(void)
 		current_import->path = idlist;
 		current_import->symbol = x;
 	}
-	else if (context == Action) {
+	else if (context == ParserContext::Action) {
 		assert(current_action != nullptr);
 		current_action->name = idlist;
 	}
-	else if (context == StateTransition) {
+	else if (context == ParserContext::StateTransition) {
 		assert(current_fsmstate != nullptr);
 		current_fsmstate->actions.push_back(idlist);
 	}
-	else if (context == PriorityInequality) {
+	else if (context == ParserContext::PriorityInequality) {
 		assert(current_prio != nullptr);
 		current_prio->prio_rel.push_back(idlist);
 	}
-	else if (context == File) {
+	else if (context == ParserContext::File) {
 		/* presumably package, ignore */
 	}
 	else {
@@ -1521,12 +1521,12 @@ void AST::AST_Builder::end_IDList(void)
 void AST::AST_Builder::start_Array(void)
 {
 	context_stack.push_back(context);
-	context = Array;
+	context = ParserContext::Array;
 }
 
 void AST::AST_Builder::end_Array(void)
 {
-	assert(context == Array);
+	assert(context == ParserContext::Array);
 	context = context_stack.back();
 	context_stack.pop_back();
 }

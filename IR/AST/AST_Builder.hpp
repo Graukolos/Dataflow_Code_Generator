@@ -55,7 +55,7 @@ namespace AST {
 
 		AST::ID idlist;
 
-		enum ParserContext
+		enum class ParserContext
 		{
 			File,
 			Import,

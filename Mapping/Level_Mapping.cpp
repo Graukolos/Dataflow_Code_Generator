@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <vector>
 #include <iostream>
+#include <cstdint>
 
 static void lft(
 	IR::Dataflow_Network* dpn,
