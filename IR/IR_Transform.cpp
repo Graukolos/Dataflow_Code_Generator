@@ -8,6 +8,7 @@
 #include "Lexer/Lexer.hpp"
 #include "Parser/Parser.hpp"
 #include <iostream>
+#include <sstream>
 #include "AST_Analysis/AST_Analysis.hpp"
 #include "common/include/String_Helper.h"
 #include "IR/AST/AST_Printer.hpp"
@@ -143,12 +144,12 @@ void IR::Actor::parse_action(AST::Action *action, std::map<std::string, std::str
 void IR::Actor::convert_import(AST::Import *import, Dataflow_Network* dpn) {
 
 	std::string path = import->path.name;
-	replace_all_substrings(path, ".", "\\");
+	std::filesystem::path p;
+	{ std::istringstream ss(path); std::string seg; while (std::getline(ss, seg, '.')) p /= seg; }
 
 	Unit* u = dpn->get_unit(path);
 
 	if (u == nullptr) {
-		std::filesystem::path p{ path };
 		u = Network_Reader::read_unit(dpn, p);
 		u->initialize(dpn);
 		dpn->add_unit(path, u);
@@ -263,12 +264,12 @@ void IR::Unit::convert_imports(IR::Dataflow_Network* dpn) {
 	for (auto it = ast->imports.begin(); it != ast->imports.end(); ++it) {
 
 		std::string path = (*it)->path.name;
-		replace_all_substrings(path, ".", "\\");
+		std::filesystem::path p;
+		{ std::istringstream ss(path); std::string seg; while (std::getline(ss, seg, '.')) p /= seg; }
 
 		Unit* u = dpn->get_unit(path);
 
 		if (u == nullptr) {
-			std::filesystem::path p{ path };
 			u = Network_Reader::read_unit(dpn, p);
 			sub_units.push_back(u);
 			u->initialize(dpn);
