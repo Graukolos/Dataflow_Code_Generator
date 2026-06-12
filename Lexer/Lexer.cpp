@@ -240,6 +240,10 @@ void Lexer::Lexer::find_next_char(void)
 			++character;
 			++index;
 			break;
+		case '\r':
+		    ++character;
+			++index;
+			break;
 		case '\n':
 			++line;
 			++index;
