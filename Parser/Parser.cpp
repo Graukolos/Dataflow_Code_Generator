@@ -1438,7 +1438,7 @@ static void parse_SingleConstCalcList(
 		keller.push_back(Symbol{ .type = Nonterminal, .nonterm_type = SingleConstCalc });
 		keller.push_back(Symbol{ .type = Nonterminal, .nonterm_type = ArithOperator });
 	}
-	else if (((current.type == Lexer::Delimiter) && (current.str == ")")) || 
+	else if (((current.type == Lexer::Delimiter) && ((current.str == ")") || (current.str == "]"))) ||
 		((current.type == Lexer::Operator) && (current.str == "==>")) ||
 		((current.type == Lexer::Delimiter2) && (current.str == ",")) ||
 		((current.type == Lexer::Keyword) && ((current.str == "guard") || (current.str == "var") || (current.str == "do") || (current.str == "end") ||
